@@ -1,0 +1,99 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">System Status</h1>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+    <div class="card" style="margin-bottom: 0;">
+        <div class="card-title" id="status-label">Status</div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div id="status-dot" style="width: 14px; height: 14px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 10px #22c55e; animation: pulse 2s infinite;"></div>
+            <span id="status-text" style="font-size: 1.3rem; font-weight: 500;">-</span>
+        </div>
+    </div>
+    <div class="card" style="margin-bottom: 0;">
+        <div class="card-title" id="mode-label">Mode</div>
+        <div id="mode" style="font-family: 'Orbitron', sans-serif; font-size: 1.5rem; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">-</div>
+    </div>
+    <div class="card" style="margin-bottom: 0;">
+        <div class="card-title" id="listen-label">Listen Address</div>
+        <div id="listen" style="font-family: monospace; font-size: 1.1rem; color: var(--text-primary);">-</div>
+    </div>
+    <div class="card" style="margin-bottom: 0;">
+        <div class="card-title" id="version-label">Version</div>
+        <div id="version" style="font-family: monospace; font-size: 1.1rem; color: var(--text-secondary);">-</div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 30px;">
+    <div class="card-title" id="json-label">Raw JSON</div>
+    <pre id="raw-json" style="background: rgba(0,0,0,0.3); padding: 20px; border-radius: 16px; font-family: monospace; font-size: 0.85rem; color: var(--text-secondary); overflow-x: auto;">Loading...</pre>
+</div>
+
+<style>
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+</style>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "System Status",
+            status: "Status",
+            mode: "Mode",
+            listen: "Listen Address",
+            version: "Version",
+            json: "Raw JSON",
+            running: "Running",
+            stopped: "Stopped"
+        },
+        zh: {
+            back: "返回",
+            title: "系统状态",
+            status: "状态",
+            mode: "模式",
+            listen: "监听地址",
+            version: "版本",
+            json: "原始 JSON",
+            running: "运行中",
+            stopped: "已停止"
+        }
+    };
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('status-label').textContent = t.status;
+        document.getElementById('mode-label').textContent = t.mode;
+        document.getElementById('listen-label').textContent = t.listen;
+        document.getElementById('version-label').textContent = t.version;
+        document.getElementById('json-label').textContent = t.json;
+        document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
+        document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
+    }
+
+    function initPage() {
+        fetch('/status', {headers: {'Accept': 'application/json'}})
+            .then(r => r.json())
+            .then(data => {
+                const t = i18n[currentLang];
+                document.getElementById('status-text').textContent = data.running ? t.running : t.stopped;
+                document.getElementById('status-dot').style.background = data.running ? '#22c55e' : '#ef4444';
+                document.getElementById('status-dot').style.boxShadow = data.running ? '0 0 10px #22c55e' : '0 0 10px #ef4444';
+                document.getElementById('mode').textContent = data.mode;
+                document.getElementById('listen').textContent = data.listenAddr;
+                document.getElementById('version').textContent = data.version;
+                document.getElementById('raw-json').textContent = JSON.stringify(data, null, 2);
+            });
+    }
+</script>
+{{end}}

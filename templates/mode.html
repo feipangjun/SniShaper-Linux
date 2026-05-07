@@ -1,0 +1,151 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">Proxy Mode</h1>
+
+<div class="card" style="position: relative; background: linear-gradient(145deg, rgba(255, 140, 0, 0.1), rgba(255, 193, 7, 0.05)); border: 2px solid rgba(255, 140, 0, 0.3); overflow: hidden; border-radius: 28px;">
+    <div style="position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #ff8c00, transparent, #ffc107, transparent, #ff8c00); background-size: 400% 400%; animation: holoBorder 3s ease infinite; z-index: -1; border-radius: 30px;"></div>
+    <div class="card-title" id="current-label">Current Mode</div>
+    <div id="current-mode" style="font-family: 'Orbitron', sans-serif; font-size: 2.2rem; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 0 30px rgba(255, 140, 0, 0.5);">{{.CurrentMode}}</div>
+</div>
+
+<div style="display: grid; gap: 16px;">
+    <div class="card mode-card" data-mode="mitm" onclick="setMode('mitm')" style="cursor: pointer; border-radius: 20px;">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="width: 60px; height: 60px; background: linear-gradient(135deg, rgba(255, 140, 0, 0.2), rgba(255, 193, 7, 0.1)); border-radius: 16px; display: flex; align-items: center; justify-content: center;">
+                <span class="iconify" data-icon="ph:lightning-bold" style="font-size: 1.8rem; color: #ff8c00;"></span>
+            </div>
+            <div>
+                <div style="font-family: 'Orbitron', sans-serif; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.2rem; margin-bottom: 6px;">MITM</div>
+                <div id="mitm-desc" style="color: var(--text-secondary); font-size: 0.95rem;">Modify SNI or inject ECH config</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mode-card" data-mode="server" onclick="setMode('server')" style="cursor: pointer; border-radius: 20px;">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="width: 60px; height: 60px; background: linear-gradient(135deg, rgba(255, 140, 0, 0.2), rgba(255, 193, 7, 0.1)); border-radius: 16px; display: flex; align-items: center; justify-content: center;">
+                <span class="iconify" data-icon="ph:server-bold" style="font-size: 1.8rem; color: #ff8c00;"></span>
+            </div>
+            <div>
+                <div style="font-family: 'Orbitron', sans-serif; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.2rem; margin-bottom: 6px;">Server</div>
+                <div id="server-desc" style="color: var(--text-secondary); font-size: 0.95rem;">Local TLS server mode</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mode-card" data-mode="tls-rf" onclick="setMode('tls-rf')" style="cursor: pointer; border-radius: 20px;">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="width: 60px; height: 60px; background: linear-gradient(135deg, rgba(255, 140, 0, 0.2), rgba(255, 193, 7, 0.1)); border-radius: 16px; display: flex; align-items: center; justify-content: center;">
+                <span class="iconify" data-icon="ph:scissors-bold" style="font-size: 1.8rem; color: #ff8c00;"></span>
+            </div>
+            <div>
+                <div style="font-family: 'Orbitron', sans-serif; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.2rem; margin-bottom: 6px;">TLS-RF</div>
+                <div id="tlsrf-desc" style="color: var(--text-secondary); font-size: 0.95rem;">TLS record fragment</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mode-card" data-mode="quic" onclick="setMode('quic')" style="cursor: pointer; border-radius: 20px;">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="width: 60px; height: 60px; background: linear-gradient(135deg, rgba(255, 140, 0, 0.2), rgba(255, 193, 7, 0.1)); border-radius: 16px; display: flex; align-items: center; justify-content: center;">
+                <span class="iconify" data-icon="ph:lightning-bold" style="font-size: 1.8rem; color: #ff8c00;"></span>
+            </div>
+            <div>
+                <div style="font-family: 'Orbitron', sans-serif; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.2rem; margin-bottom: 6px;">QUIC</div>
+                <div id="quic-desc" style="color: var(--text-secondary); font-size: 0.95rem;">HTTP/3 and QUIC support</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mode-card" data-mode="transparent" onclick="setMode('transparent')" style="cursor: pointer; border-radius: 20px;">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="width: 60px; height: 60px; background: linear-gradient(135deg, rgba(255, 140, 0, 0.2), rgba(255, 193, 7, 0.1)); border-radius: 16px; display: flex; align-items: center; justify-content: center;">
+                <span class="iconify" data-icon="ph:monitor-bold" style="font-size: 1.8rem; color: #ff8c00;"></span>
+            </div>
+            <div>
+                <div style="font-family: 'Orbitron', sans-serif; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.2rem; margin-bottom: 6px;">Transparent</div>
+                <div id="transparent-desc" style="color: var(--text-secondary); font-size: 0.95rem;">Transparent proxy mode</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    @keyframes holoBorder {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    .mode-card {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .mode-card:hover {
+        transform: translateX(10px);
+        border-color: rgba(255, 140, 0, 0.4);
+        box-shadow: 0 8px 30px rgba(255, 140, 0, 0.15);
+    }
+    .mode-card.active {
+        border: 2px solid #ff8c00;
+        background: linear-gradient(145deg, rgba(255, 140, 0, 0.15), rgba(255, 193, 7, 0.08));
+        box-shadow: 0 0 30px rgba(255, 140, 0, 0.3);
+    }
+</style>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "Proxy Mode",
+            current: "Current Mode",
+            mitmDesc: "Modify SNI or inject ECH config",
+            serverDesc: "Local TLS server mode",
+            tlsrfDesc: "TLS record fragment",
+            quicDesc: "HTTP/3 and QUIC support",
+            transparentDesc: "Transparent proxy mode"
+        },
+        zh: {
+            back: "返回",
+            title: "代理模式",
+            current: "当前模式",
+            mitmDesc: "修改SNI或注入ECH配置",
+            serverDesc: "本地TLS服务器模式",
+            tlsrfDesc: "TLS记录分片",
+            quicDesc: "HTTP/3和QUIC支持",
+            transparentDesc: "透明代理模式"
+        }
+    };
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('current-label').textContent = t.current;
+        document.getElementById('mitm-desc').textContent = t.mitmDesc;
+        document.getElementById('server-desc').textContent = t.serverDesc;
+        document.getElementById('tlsrf-desc').textContent = t.tlsrfDesc;
+        document.getElementById('quic-desc').textContent = t.quicDesc;
+        document.getElementById('transparent-desc').textContent = t.transparentDesc;
+        document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
+        document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
+    }
+
+    function setMode(m) {
+        fetch('/mode?m=' + m, {method: 'POST'}).then(() => location.reload());
+    }
+
+    function initPage() {
+        const currentMode = '{{.CurrentMode}}';
+        document.querySelectorAll('.mode-card').forEach(card => {
+            if (card.dataset.mode === currentMode) {
+                card.classList.add('active');
+            }
+        });
+    }
+</script>
+{{end}}

@@ -1,0 +1,79 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">Traffic Statistics</h1>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <div class="card" style="text-align: center; padding: 50px 30px; background: linear-gradient(145deg, rgba(255, 140, 0, 0.1), rgba(255, 193, 7, 0.05)); border: 1px solid rgba(255, 140, 0, 0.2);">
+        <div style="margin-bottom: 20px;">
+            <span class="iconify" data-icon="ph:arrow-down-bold" style="font-size: 3rem; color: #ff8c00;"></span>
+        </div>
+        <div id="download-label" style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px;">Total Download</div>
+        <div id="download-value" style="font-family: 'Orbitron', sans-serif; font-size: 2.8rem; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">-</div>
+    </div>
+    <div class="card" style="text-align: center; padding: 50px 30px; background: linear-gradient(145deg, rgba(255, 140, 0, 0.1), rgba(255, 193, 7, 0.05)); border: 1px solid rgba(255, 140, 0, 0.2);">
+        <div style="margin-bottom: 20px;">
+            <span class="iconify" data-icon="ph:arrow-up-bold" style="font-size: 3rem; color: #ff8c00;"></span>
+        </div>
+        <div id="upload-label" style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px;">Total Upload</div>
+        <div id="upload-value" style="font-family: 'Orbitron', sans-serif; font-size: 2.8rem; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">-</div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 30px; text-align: center; padding: 60px;">
+    <span class="iconify" data-icon="ph:chart-line-up-bold" style="font-size: 3rem; color: #ff8c00; margin-bottom: 20px; opacity: 0.5;"></span>
+    <p id="chart-text" style="color: var(--text-secondary);">Real-time charts coming soon</p>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "Traffic Statistics",
+            download: "Total Download",
+            upload: "Total Upload",
+            chart: "Real-time charts coming soon"
+        },
+        zh: {
+            back: "返回",
+            title: "流量统计",
+            download: "总下载量",
+            upload: "总上传量",
+            chart: "实时图表即将推出"
+        }
+    };
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('download-label').textContent = t.download;
+        document.getElementById('upload-label').textContent = t.upload;
+        document.getElementById('chart-text').textContent = t.chart;
+        document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
+        document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
+    }
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function initPage() {
+        fetch('/stats', {headers: {'Accept': 'application/json'}})
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('download-value').textContent = formatBytes(data.download);
+                document.getElementById('upload-value').textContent = formatBytes(data.upload);
+            });
+    }
+</script>
+{{end}}

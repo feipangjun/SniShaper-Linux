@@ -1,0 +1,41 @@
+# Build artifacts
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+snishaper
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go vendor directory
+/vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Certificates (user generated)
+/certs/*.pem
+/certs/*.key
+/certs/*.crt
+
+# Config files (user specific)
+*.json.bak
+*.yaml.bak
+
+# Logs
+*.log
+# Windows Version
+/Windows/

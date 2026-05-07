@@ -243,6 +243,27 @@ func (cm *CertManager) InstallCA() error {
 	return nil
 }
 
+func (cm *CertManager) ExportCert() ([]byte, error) {
+	cm.certMu.RLock()
+	defer cm.certMu.RUnlock()
+	if cm.caCert == nil {
+		return nil, fmt.Errorf("no CA certificate available")
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cm.caCert.Raw}), nil
+}
+
+func (cm *CertManager) RegenerateCA() error {
+	cm.certMu.Lock()
+	if err := cm.generateCAUnlocked(); err != nil {
+		cm.certMu.Unlock()
+		return err
+	}
+	cm.certMu.Unlock()
+
+	fmt.Println("[Cert] CA certificate regenerated successfully")
+	return nil
+}
+
 func bigint(b []byte) *big.Int {
 	return new(big.Int).SetBytes(b)
 }

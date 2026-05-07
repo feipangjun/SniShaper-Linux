@@ -1,0 +1,153 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">Cloudflare IP Pool</h1>
+
+<div class="toolbar">
+    <button class="btn-sci" onclick="fetchIPs()" id="fetch-btn">
+        <span class="iconify" data-icon="ph:cloud-arrow-down-bold"></span>
+        <span id="fetch-text">Fetch IPs</span>
+    </button>
+    <button class="btn-sci" onclick="loadIPs()" id="refresh-btn">
+        <span class="iconify" data-icon="ph:arrows-clockwise-bold"></span>
+        <span>Refresh</span>
+    </button>
+    <button class="btn-sci secondary" onclick="healthCheck()" id="health-btn">
+        <span class="iconify" data-icon="ph:heartbeat-bold"></span>
+        <span id="health-text">Health Check</span>
+    </button>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 12px; align-items: center;">
+        <span class="iconify" data-icon="ph:info-bold" style="color: #ff8c00; font-size: 1.5rem;"></span>
+        <span id="info-text" style="color: var(--text-secondary);">Manage Cloudflare IP addresses for shaping</span>
+    </div>
+</div>
+
+<div class="item-list" id="ip-list">
+    <div class="empty-state">
+        <span class="iconify" data-icon="ph:cloud-bold"></span>
+        <p id="loading-text">Loading...</p>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "Cloudflare IP Pool",
+            refresh: "Refresh",
+            add: "Add IP",
+            health: "Health Check",
+            info: "Manage Cloudflare IP addresses for shaping",
+            loading: "Loading...",
+            noIPs: "No IPs configured",
+            valid: "Valid",
+            invalid: "Invalid",
+            delete: "Delete",
+            latency: "Latency",
+            enterIP: "Enter IP address:"
+        },
+        zh: {
+            back: "返回",
+            title: "Cloudflare IP池",
+            refresh: "刷新",
+            add: "添加IP",
+            health: "健康检查",
+            info: "管理用于分流的Cloudflare IP地址",
+            loading: "加载中...",
+            noIPs: "未配置IP",
+            valid: "有效",
+            invalid: "无效",
+            delete: "删除",
+            latency: "延迟",
+            enterIP: "输入IP地址："
+        }
+    };
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('refresh-btn').querySelector('span:last-child').textContent = t.refresh;
+        document.getElementById('add-text').textContent = t.add;
+        document.getElementById('health-text').textContent = t.health;
+        document.getElementById('info-text').textContent = t.info;
+        document.getElementById('loading-text').textContent = t.loading;
+        document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
+        document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
+    }
+
+    function loadIPs() {
+        const t = i18n[currentLang];
+        document.getElementById('ip-list').innerHTML = '<div class="empty-state"><span class="iconify" data-icon="ph:cloud-bold"></span><p>' + t.loading + '</p></div>';
+        
+        fetch('/cfpool', {headers: {'Accept': 'application/json'}})
+            .then(r => r.json())
+            .then(data => {
+                const list = document.getElementById('ip-list');
+                const t = i18n[currentLang];
+                if (data.ips && data.ips.length > 0) {
+                    list.innerHTML = data.ips.map(ip => 
+                        '<div class="item-card">' +
+                            '<div>' +
+                                '<div class="item-name">' + (ip.address || '-') + '</div>' +
+                                '<div style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">' + t.latency + ': ' + (ip.latency || '-') + 'ms</div>' +
+                            '</div>' +
+                            '<div style="display: flex; align-items: center; gap: 12px;">' +
+                                '<span class="status-badge ' + (ip.valid ? 'status-enabled' : 'status-disabled') + '">' + (ip.valid ? t.valid : t.invalid) + '</span>' +
+                                '<div class="item-actions">' +
+                                    '<button class="btn-icon delete" onclick="deleteIP(\'' + (ip.address || '') + '\')" title="' + t.delete + '">' +
+                                        '<span class="iconify" data-icon="ph:trash-bold"></span>' +
+                                    '</button>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>'
+                    ).join('');
+                } else {
+                    list.innerHTML = '<div class="empty-state"><span class="iconify" data-icon="ph:cloud-bold"></span><p>' + t.noIPs + '</p></div>';
+                }
+            })
+            .catch(() => {
+                document.getElementById('ip-list').innerHTML = '<div class="empty-state"><span class="iconify" data-icon="ph:warning-bold"></span><p>Failed to load</p></div>';
+            });
+    }
+
+    function addIP() {
+        const t = i18n[currentLang];
+        const ip = prompt(t.enterIP);
+        if (!ip) return;
+        
+        fetch('/cfpool', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({address: ip})
+        }).then(() => loadIPs());
+    }
+
+    function deleteIP(ip) {
+        if (confirm('Delete ' + ip + '?')) {
+            fetch('/cfpool?ip=' + ip, {method: 'DELETE'}).then(() => loadIPs());
+        }
+    }
+
+    function healthCheck() {
+        fetch('/cfpool/health', {method: 'POST'})
+            .then(() => {
+                const t = i18n[currentLang];
+                alert(t.health + ' started');
+                setTimeout(loadIPs, 2000);
+            });
+    }
+
+    function initPage() {
+        loadIPs();
+    }
+</script>
+{{end}}

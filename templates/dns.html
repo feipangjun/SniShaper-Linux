@@ -1,0 +1,293 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">DNS Nodes</h1>
+
+<div class="toolbar">
+    <button class="btn-sci" onclick="loadNodes()" id="refresh-btn">
+        <span class="iconify" data-icon="ph:arrows-clockwise-bold"></span>
+        <span>Refresh</span>
+    </button>
+    <button class="btn-sci" onclick="addNode()" id="add-btn">
+        <span class="iconify" data-icon="ph:plus-bold"></span>
+        <span id="add-text">Add Node</span>
+    </button>
+</div>
+
+<div class="item-list" id="nodes-list">
+    <div class="empty-state">
+        <span class="iconify" data-icon="ph:spinner-bold"></span>
+        <p id="loading-text">Loading...</p>
+    </div>
+</div>
+
+<div id="node-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-title">Add DNS Node</h2>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="node-form">
+                <input type="hidden" id="node-id">
+                <div class="form-group">
+                    <label for="node-name" id="label-name">Name</label>
+                    <input type="text" class="form-input" id="node-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="node-url" id="label-url">DoH URL</label>
+                    <input type="url" class="form-input" id="node-url" placeholder="https://dns.example.com/dns-query" required>
+                </div>
+                <div class="form-group">
+                    <label for="node-sni" id="label-sni">SNI (Optional)</label>
+                    <input type="text" class="form-input" id="node-sni" placeholder="Frontend SNI">
+                </div>
+                <div class="form-group">
+                    <label for="node-ips" id="label-ips">Backend IPs (comma separated)</label>
+                    <input type="text" class="form-input" id="node-ips" placeholder="1.1.1.1, 1.0.0.1">
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="node-ech">
+                    <label for="node-ech" id="label-ech">Enable ECH</label>
+                </div>
+                <div class="form-group">
+                    <label for="node-ech-profile" id="label-ech-profile">ECH Profile ID</label>
+                    <input type="text" class="form-input" id="node-ech-profile" placeholder="legacy-cloudflare">
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="node-quic">
+                    <label for="node-quic" id="label-quic">Use QUIC</label>
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="node-enabled" checked>
+                    <label for="node-enabled" id="label-enabled">Enabled</label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-sci secondary" onclick="closeModal()" id="btn-cancel">Cancel</button>
+            <button class="btn-sci" onclick="saveNode()" id="btn-save">Save</button>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "DNS Nodes",
+            refresh: "Refresh",
+            add: "Add Node",
+            loading: "Loading...",
+            noNodes: "No DNS nodes configured",
+            edit: "Edit",
+            delete: "Delete",
+            moveUp: "Move Up",
+            moveDown: "Move Down",
+            test: "Test",
+            modalAdd: "Add DNS Node",
+            modalEdit: "Edit DNS Node",
+            name: "Name",
+            url: "DoH URL",
+            sni: "SNI (Optional)",
+            ips: "Backend IPs (comma separated)",
+            ech: "Enable ECH",
+            echProfile: "ECH Profile ID",
+            quic: "Use QUIC",
+            enabled: "Enabled",
+            cancel: "Cancel",
+            save: "Save",
+            confirmDelete: "Are you sure you want to delete this node?",
+            saved: "Node saved successfully",
+            deleted: "Node deleted",
+            testing: "Testing..."
+        },
+        zh: {
+            back: "返回",
+            title: "DNS节点",
+            refresh: "刷新",
+            add: "添加节点",
+            loading: "加载中...",
+            noNodes: "未配置DNS节点",
+            edit: "编辑",
+            delete: "删除",
+            moveUp: "上移",
+            moveDown: "下移",
+            test: "测试",
+            modalAdd: "添加DNS节点",
+            modalEdit: "编辑DNS节点",
+            name: "名称",
+            url: "DoH地址",
+            sni: "SNI（可选）",
+            ips: "后端IP（逗号分隔）",
+            ech: "启用ECH",
+            echProfile: "ECH配置ID",
+            quic: "使用QUIC",
+            enabled: "启用",
+            cancel: "取消",
+            save: "保存",
+            confirmDelete: "确定要删除此节点吗？",
+            saved: "节点保存成功",
+            deleted: "节点已删除",
+            testing: "测试中..."
+        }
+    };
+
+    let nodes = [];
+
+    function loadNodes() {
+        fetch('/dns', { headers: { 'Accept': 'application/json' } })
+            .then(res => res.json())
+            .then(data => {
+                nodes = data.nodes || [];
+                renderNodes();
+            })
+            .catch(err => {
+                console.error('Failed to load nodes:', err);
+                document.getElementById('nodes-list').innerHTML = '<div class="empty-state"><p>Failed to load</p></div>';
+            });
+    }
+
+    function renderNodes() {
+        const container = document.getElementById('nodes-list');
+        if (nodes.length === 0) {
+            container.innerHTML = '<div class="empty-state"><span class="iconify" data-icon="ph:dns-bold"></span><p>' + (currentLang === 'zh' ? i18n.zh.noNodes : i18n.en.noNodes) + '</p></div>';
+            return;
+        }
+
+        container.innerHTML = nodes.map((node, index) => `
+            <div class="card item-card">
+                <div class="item-header">
+                    <div>
+                        <h3 class="item-title">${node.name}</h3>
+                        <p class="item-subtitle">${node.url}</p>
+                    </div>
+                    <div class="item-actions">
+                        ${index > 0 ? `<button class="btn-icon" onclick="moveNode('${node.id}', ${index - 1})" title="Move Up"><span class="iconify" data-icon="ph:arrow-up-bold"></span></button>` : ''}
+                        ${index < nodes.length - 1 ? `<button class="btn-icon" onclick="moveNode('${node.id}', ${index + 1})" title="Move Down"><span class="iconify" data-icon="ph:arrow-down-bold"></span></button>` : ''}
+                        <button class="btn-icon" onclick="testNode('${node.id}')" title="Test"><span class="iconify" data-icon="ph:flask-bold"></span></button>
+                        <button class="btn-icon" onclick="editNode('${node.id}')" title="Edit"><span class="iconify" data-icon="ph:pencil-bold"></span></button>
+                        <button class="btn-icon danger" onclick="deleteNode('${node.id}')" title="Delete"><span class="iconify" data-icon="ph:trash-bold"></span></button>
+                    </div>
+                </div>
+                <div class="item-tags">
+                    ${node.ech_enabled ? '<span class="tag tag-ech">ECH</span>' : ''}
+                    ${node.quic ? '<span class="tag tag-quic">QUIC</span>' : ''}
+                    ${node.sni ? `<span class="tag tag-sni">SNI: ${node.sni}</span>` : ''}
+                    <span class="tag ${node.enabled ? 'tag-enabled' : 'tag-disabled'}">${node.enabled ? 'Enabled' : 'Disabled'}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function addNode() {
+        document.getElementById('modal-title').textContent = currentLang === 'zh' ? i18n.zh.modalAdd : i18n.en.modalAdd;
+        document.getElementById('node-form').reset();
+        document.getElementById('node-id').value = '';
+        document.getElementById('node-enabled').checked = true;
+        document.getElementById('node-modal').style.display = 'flex';
+    }
+
+    function editNode(id) {
+        const node = nodes.find(n => n.id === id);
+        if (!node) return;
+
+        document.getElementById('modal-title').textContent = currentLang === 'zh' ? i18n.zh.modalEdit : i18n.en.modalEdit;
+        document.getElementById('node-id').value = node.id;
+        document.getElementById('node-name').value = node.name;
+        document.getElementById('node-url').value = node.url;
+        document.getElementById('node-sni').value = node.sni || '';
+        document.getElementById('node-ips').value = (node.ips || []).join(', ');
+        document.getElementById('node-ech').checked = node.ech_enabled;
+        document.getElementById('node-ech-profile').value = node.ech_profile_id || '';
+        document.getElementById('node-quic').checked = node.quic;
+        document.getElementById('node-enabled').checked = node.enabled;
+        document.getElementById('node-modal').style.display = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('node-modal').style.display = 'none';
+    }
+
+    function saveNode() {
+        const id = document.getElementById('node-id').value;
+        const node = {
+            id: id,
+            name: document.getElementById('node-name').value,
+            url: document.getElementById('node-url').value,
+            sni: document.getElementById('node-sni').value,
+            ips: document.getElementById('node-ips').value.split(',').map(s => s.trim()).filter(Boolean),
+            ech_enabled: document.getElementById('node-ech').checked,
+            ech_profile_id: document.getElementById('node-ech-profile').value,
+            quic: document.getElementById('node-quic').checked,
+            enabled: document.getElementById('node-enabled').checked
+        };
+
+        const method = id ? 'PUT' : 'POST';
+        fetch('/dns', {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(node)
+        })
+        .then(res => res.json())
+        .then(data => {
+            alert(currentLang === 'zh' ? i18n.zh.saved : i18n.en.saved);
+            closeModal();
+            loadNodes();
+        })
+        .catch(err => alert('Error: ' + err));
+    }
+
+    function deleteNode(id) {
+        if (!confirm(currentLang === 'zh' ? i18n.zh.confirmDelete : i18n.en.confirmDelete)) return;
+
+        fetch('/dns?id=' + id, { method: 'DELETE' })
+            .then(res => res.json())
+            .then(data => {
+                alert(currentLang === 'zh' ? i18n.zh.deleted : i18n.en.deleted);
+                loadNodes();
+            })
+            .catch(err => alert('Error: ' + err));
+    }
+
+    function moveNode(id, targetIndex) {
+        fetch('/dns?id=' + id + '&target=' + targetIndex, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => loadNodes())
+            .catch(err => alert('Error: ' + err));
+    }
+
+    function testNode(id) {
+        alert(currentLang === 'zh' ? i18n.zh.testing : i18n.en.testing);
+    }
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('refresh-btn span:last-child').textContent = t.refresh;
+        document.getElementById('add-text').textContent = t.add;
+        document.getElementById('loading-text').textContent = t.loading;
+        document.getElementById('btn-cancel').textContent = t.cancel;
+        document.getElementById('btn-save').textContent = t.save;
+        document.getElementById('label-name').textContent = t.name;
+        document.getElementById('label-url').textContent = t.url;
+        document.getElementById('label-sni').textContent = t.sni;
+        document.getElementById('label-ips').textContent = t.ips;
+        document.getElementById('label-ech').textContent = t.ech;
+        document.getElementById('label-ech-profile').textContent = t.echProfile;
+        document.getElementById('label-quic').textContent = t.quic;
+        document.getElementById('label-enabled').textContent = t.enabled;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadNodes();
+        updateUI();
+    });
+</script>
+{{end}}

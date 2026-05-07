@@ -1,0 +1,287 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">Settings</h1>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="showTab('general')" id="tab-general">General</button>
+    <button class="tab-btn" onclick="showTab('cert')" id="tab-cert">Certificate</button>
+    <button class="tab-btn" onclick="showTab('tun')" id="tab-tun">TUN</button>
+    <button class="tab-btn" onclick="showTab('config')" id="tab-config">Config</button>
+</div>
+
+<div id="tab-general" class="tab-content active">
+    <div class="card">
+        <div class="card-title" id="general-title">General Settings</div>
+        <form id="general-form">
+            <div class="form-group">
+                <label for="listen-port" id="label-port">Listen Port</label>
+                <input type="number" class="form-input" id="listen-port" value="8080" min="1" max="65535">
+            </div>
+            <div class="form-group">
+                <label for="server-host" id="label-host">Server Host</label>
+                <input type="text" class="form-input" id="server-host" placeholder="proxy.example.com">
+            </div>
+            <div class="form-group">
+                <label for="server-auth" id="label-auth">Auth Token</label>
+                <input type="password" class="form-input" id="server-auth" placeholder="Authentication token">
+            </div>
+            <button type="submit" class="btn-sci" id="btn-save-general">
+                <span class="iconify" data-icon="ph:floppy-disk-bold"></span>
+                <span id="save-text">Save</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<div id="tab-cert" class="tab-content">
+    <div class="card">
+        <div class="card-title" id="cert-title">CA Certificate</div>
+        <div class="cert-status">
+            <div class="status-item">
+                <span id="cert-status-label">Status:</span>
+                <span id="cert-status-value" class="status-value">Unknown</span>
+            </div>
+            <div class="status-item">
+                <span id="cert-path-label">Path:</span>
+                <span id="cert-path-value" class="status-value">-</span>
+            </div>
+        </div>
+        <div class="toolbar">
+            <button class="btn-sci" onclick="exportCert()" id="btn-export">
+                <span class="iconify" data-icon="ph:download-bold"></span>
+                <span id="export-text">Export Cert</span>
+            </button>
+            <button class="btn-sci secondary" onclick="regenerateCert()" id="btn-regenerate">
+                <span class="iconify" data-icon="ph:arrow-clockwise-bold"></span>
+                <span id="regenerate-text">Regenerate</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 20px;">
+        <div class="card-title" id="install-title">Installation Guide</div>
+        <div class="install-guide">
+            <p id="guide-text">To trust the CA certificate, you need to install it in your system's trust store.</p>
+            <pre class="code-block">
+# Linux (Debian/Ubuntu)
+sudo cp /path/to/snishaper-ca.pem /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+
+# Or add to browser's certificate manager manually
+            </pre>
+        </div>
+    </div>
+</div>
+
+<div id="tab-tun" class="tab-content">
+    <div class="card">
+        <div class="card-title" id="tun-title">TUN Mode</div>
+        <form id="tun-form">
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="tun-enabled">
+                <label for="tun-enabled" id="label-enabled">Enable TUN</label>
+            </div>
+            <div class="form-group">
+                <label for="tun-name" id="label-name">Device Name</label>
+                <input type="text" class="form-input" id="tun-name" value="tun0">
+            </div>
+            <div class="form-group">
+                <label for="tun-addr" id="label-addr">Address</label>
+                <input type="text" class="form-input" id="tun-addr" value="10.0.0.1/24">
+            </div>
+            <div class="form-group">
+                <label for="tun-mtu" id="label-mtu">MTU</label>
+                <input type="number" class="form-input" id="tun-mtu" value="9000">
+            </div>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="tun-dns">
+                <label for="tun-dns" id="label-dns">DNS Hijack</label>
+            </div>
+            <button type="submit" class="btn-sci" id="btn-save-tun">
+                <span class="iconify" data-icon="ph:floppy-disk-bold"></span>
+                <span id="save-tun-text">Save TUN Config</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<div id="tab-config" class="tab-content">
+    <div class="card">
+        <div class="card-title" id="import-export-title">Import/Export Configuration</div>
+        <div class="toolbar">
+            <button class="btn-sci" onclick="exportConfig()" id="btn-export-config">
+                <span class="iconify" data-icon="ph:export-bold"></span>
+                <span id="export-config-text">Export Config</span>
+            </button>
+            <label class="btn-sci secondary" id="btn-import-label">
+                <span class="iconify" data-icon="ph:import-bold"></span>
+                <span id="import-config-text">Import Config</span>
+                <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importConfig(this)">
+            </label>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "Settings",
+            tabs: { general: "General", cert: "Certificate", tun: "TUN", config: "Config" },
+            general: "General Settings",
+            port: "Listen Port",
+            host: "Server Host",
+            auth: "Auth Token",
+            save: "Save",
+            cert: "CA Certificate",
+            certStatus: "Status:",
+            certPath: "Path:",
+            export: "Export Cert",
+            regenerate: "Regenerate",
+            install: "Installation Guide",
+            guide: "To trust the CA certificate, you need to install it in your system's trust store.",
+            tun: "TUN Mode",
+            enabled: "Enable TUN",
+            name: "Device Name",
+            addr: "Address",
+            mtu: "MTU",
+            dns: "DNS Hijack",
+            saveTun: "Save TUN Config",
+            importExport: "Import/Export Configuration",
+            exportConfig: "Export Config",
+            importConfig: "Import Config",
+            saved: "Settings saved",
+            certExported: "Certificate exported",
+            certRegenerated: "Certificate regenerated",
+            configExported: "Configuration exported",
+            configImported: "Configuration imported successfully"
+        },
+        zh: {
+            back: "返回",
+            title: "设置",
+            tabs: { general: "常规", cert: "证书", tun: "TUN", config: "配置" },
+            general: "常规设置",
+            port: "监听端口",
+            host: "服务器地址",
+            auth: "认证令牌",
+            save: "保存",
+            cert: "CA证书",
+            certStatus: "状态：",
+            certPath: "路径：",
+            export: "导出证书",
+            regenerate: "重新生成",
+            install: "安装指南",
+            guide: "要信任CA证书，您需要将其安装到系统的信任存储中。",
+            tun: "TUN模式",
+            enabled: "启用TUN",
+            name: "设备名称",
+            addr: "地址",
+            mtu: "MTU",
+            dns: "DNS劫持",
+            saveTun: "保存TUN配置",
+            importExport: "导入/导出配置",
+            exportConfig: "导出配置",
+            importConfig: "导入配置",
+            saved: "设置已保存",
+            certExported: "证书已导出",
+            certRegenerated: "证书已重新生成",
+            configExported: "配置已导出",
+            configImported: "配置导入成功"
+        }
+    };
+
+    function showTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById('tab-' + tabName).classList.add('active');
+        document.getElementById('tab-' + tabName).classList.add('active');
+    }
+
+    function exportCert() {
+        window.open('/cert?action=export', '_blank');
+    }
+
+    function regenerateCert() {
+        if (!confirm('Are you sure you want to regenerate the CA certificate?')) return;
+        fetch('/cert?action=regenerate', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                alert(currentLang === 'zh' ? i18n.zh.certRegenerated : i18n.en.certRegenerated);
+                loadCertStatus();
+            })
+            .catch(err => alert('Error: ' + err));
+    }
+
+    function exportConfig() {
+        window.open('/config/export', '_blank');
+    }
+
+    function importConfig(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('config', file);
+
+        fetch('/config/import', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(data => {
+                alert(currentLang === 'zh' ? i18n.zh.configImported : i18n.en.configImported);
+            })
+            .catch(err => alert('Error: ' + err));
+    }
+
+    function loadCertStatus() {
+        fetch('/cert')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('cert-status-value').textContent = data.Installed ? 'Installed' : 'Not Installed';
+                document.getElementById('cert-path-value').textContent = data.CertPath || '-';
+            })
+            .catch(err => console.error('Failed to load cert status:', err));
+    }
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('tab-general').textContent = t.tabs.general;
+        document.getElementById('tab-cert').textContent = t.tabs.cert;
+        document.getElementById('tab-tun').textContent = t.tabs.tun;
+        document.getElementById('tab-config').textContent = t.tabs.config;
+        document.getElementById('general-title').textContent = t.general;
+        document.getElementById('label-port').textContent = t.port;
+        document.getElementById('label-host').textContent = t.host;
+        document.getElementById('label-auth').textContent = t.auth;
+        document.getElementById('save-text').textContent = t.save;
+        document.getElementById('cert-title').textContent = t.cert;
+        document.getElementById('cert-status-label').textContent = t.certStatus;
+        document.getElementById('cert-path-label').textContent = t.certPath;
+        document.getElementById('export-text').textContent = t.export;
+        document.getElementById('regenerate-text').textContent = t.regenerate;
+        document.getElementById('install-title').textContent = t.install;
+        document.getElementById('guide-text').textContent = t.guide;
+        document.getElementById('tun-title').textContent = t.tun;
+        document.getElementById('label-enabled').textContent = t.enabled;
+        document.getElementById('label-name').textContent = t.name;
+        document.getElementById('label-addr').textContent = t.addr;
+        document.getElementById('label-mtu').textContent = t.mtu;
+        document.getElementById('label-dns').textContent = t.dns;
+        document.getElementById('save-tun-text').textContent = t.saveTun;
+        document.getElementById('import-export-title').textContent = t.importExport;
+        document.getElementById('export-config-text').textContent = t.exportConfig;
+        document.getElementById('import-config-text').textContent = t.importConfig;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCertStatus();
+        updateUI();
+    });
+</script>
+{{end}}

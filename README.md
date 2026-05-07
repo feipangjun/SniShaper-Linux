@@ -27,16 +27,24 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/SniShaper/snishaper.git
+git clone https://github.com/dongzheyu/snishaper.git
 cd snishaper
 
 # 构建
+
+## 手动构建
+
+### 构建二进制文件
 go build -o dist/snishaper main.go
 
-# 复制默认规则
+### 复制默认规则
 cp -r rules dist/
-```
 
+## 脚本构建
+
+### 构建脚本
+./build.sh
+```
 ### 2. 运行
 
 ```bash

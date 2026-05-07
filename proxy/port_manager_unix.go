@@ -6,17 +6,11 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 func FindProcessByPort(port int) (int, error) {
-	if runtime.GOOS == "windows" {
-		return findProcessByPortWindows(port)
-	}
-
 	cmd := exec.Command("lsof", "-ti", fmt.Sprintf(":%d", port))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -37,10 +31,6 @@ func FindProcessByPort(port int) (int, error) {
 }
 
 func GetProcessNameByPID(pid int) (string, error) {
-	if runtime.GOOS == "windows" {
-		return getProcessNameByPIDWindows(pid)
-	}
-
 	cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", pid), "-o", "comm=")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -52,10 +42,6 @@ func GetProcessNameByPID(pid int) (string, error) {
 }
 
 func KillProcessByPID(pid int) error {
-	if runtime.GOOS == "windows" {
-		return killProcessByPIDWindows(pid)
-	}
-
 	cmd := exec.Command("kill", "-9", fmt.Sprintf("%d", pid))
 	return cmd.Run()
 }

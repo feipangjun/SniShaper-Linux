@@ -1,0 +1,121 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">Proxy Rules</h1>
+
+<div class="toolbar">
+    <button class="btn-sci" onclick="loadRules()" id="refresh-btn">
+        <span class="iconify" data-icon="ph:arrows-clockwise-bold"></span>
+        <span>Refresh</span>
+    </button>
+    <a href="/rules/edit" class="btn-sci">
+        <span class="iconify" data-icon="ph:plus-bold"></span>
+        <span id="add-btn">Add Rule</span>
+    </a>
+</div>
+
+<div class="item-list" id="rules-list">
+    <div class="empty-state">
+        <span class="iconify" data-icon="ph:shield-check-bold"></span>
+        <p id="loading-text">Loading...</p>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "Proxy Rules",
+            refresh: "Refresh",
+            add: "Add Rule",
+            loading: "Loading...",
+            noRules: "No rules configured",
+            loadFailed: "Failed to load rules",
+            enabled: "Enabled",
+            disabled: "Disabled",
+            delete: "Delete",
+            edit: "Edit",
+            confirmDelete: "Are you sure you want to delete this rule?"
+        },
+        zh: {
+            back: "返回",
+            title: "代理规则",
+            refresh: "刷新",
+            add: "添加规则",
+            loading: "加载中...",
+            noRules: "未配置规则",
+            loadFailed: "加载规则失败",
+            enabled: "已启用",
+            disabled: "已禁用",
+            delete: "删除",
+            edit: "编辑",
+            confirmDelete: "确定要删除此规则吗？"
+        }
+    };
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('refresh-btn').querySelector('span:last-child').textContent = t.refresh;
+        document.getElementById('add-btn').textContent = t.add;
+        document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
+        document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
+    }
+
+    function loadRules() {
+        const t = i18n[currentLang];
+        document.getElementById('rules-list').innerHTML = '<div class="empty-state"><span class="iconify" data-icon="ph:shield-check-bold"></span><p>' + t.loading + '</p></div>';
+        
+        fetch('/rules', {headers: {'Accept': 'application/json'}})
+            .then(r => r.json())
+            .then(data => {
+                const list = document.getElementById('rules-list');
+                const t = i18n[currentLang];
+                if (data.rules && data.rules.length > 0) {
+                    list.innerHTML = data.rules.map(r => 
+                        '<div class="item-card">' +
+                            '<div>' +
+                                '<div class="item-name">' + (r.name || 'Unnamed') + '</div>' +
+                                '<div style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">' + (r.website || '-') + ' | ' + (r.mode || 'mitm') + '</div>' +
+                            '</div>' +
+                            '<div style="display: flex; align-items: center; gap: 12px;">' +
+                                '<span class="status-badge ' + (r.enabled ? 'status-enabled' : 'status-disabled') + '">' + (r.enabled ? t.enabled : t.disabled) + '</span>' +
+                                '<div class="item-actions">' +
+                                    '<a href="/rules/edit?id=' + (r.id || '') + '" class="btn-icon" title="' + t.edit + '">' +
+                                        '<span class="iconify" data-icon="ph:pencil-bold"></span>' +
+                                    '</a>' +
+                                    '<button class="btn-icon delete" onclick="deleteRule(\'' + (r.id || '') + '\')" title="' + t.delete + '">' +
+                                        '<span class="iconify" data-icon="ph:trash-bold"></span>' +
+                                    '</button>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>'
+                    ).join('');
+                } else {
+                    list.innerHTML = '<div class="empty-state"><span class="iconify" data-icon="ph:shield-check-bold"></span><p>' + t.noRules + '</p></div>';
+                }
+            })
+            .catch(() => {
+                const t = i18n[currentLang];
+                document.getElementById('rules-list').innerHTML = '<div class="empty-state"><span class="iconify" data-icon="ph:warning-bold"></span><p>' + t.loadFailed + '</p></div>';
+            });
+    }
+
+    function deleteRule(id) {
+        const t = i18n[currentLang];
+        if (confirm(t.confirmDelete)) {
+            fetch('/rules?id=' + id, {method: 'DELETE'}).then(() => loadRules());
+        }
+    }
+
+    function initPage() {
+        loadRules();
+    }
+</script>
+{{end}}

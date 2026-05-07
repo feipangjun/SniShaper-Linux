@@ -1,0 +1,184 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">Auto Routing</h1>
+
+<div class="card">
+    <div class="card-title" id="config-title">Routing Configuration</div>
+    <form id="routing-form">
+        <div class="form-group">
+            <label for="routing-mode" id="label-mode">Mode</label>
+            <select class="form-input" id="routing-mode">
+                <option value="">Disabled</option>
+                <option value="smart">Smart Mode</option>
+                <option value="gfwlist">GFWList Mode</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="gfwlist-url" id="label-url">GFWList URL</label>
+            <input type="url" class="form-input" id="gfwlist-url" placeholder="https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt">
+        </div>
+        <div class="toolbar">
+            <button type="button" class="btn-sci" onclick="refreshGFWList()" id="refresh-btn">
+                <span class="iconify" data-icon="ph:arrows-clockwise-bold"></span>
+                <span id="refresh-text">Refresh GFWList</span>
+            </button>
+            <button type="submit" class="btn-sci" id="save-btn">
+                <span class="iconify" data-icon="ph:floppy-disk-bold"></span>
+                <span id="save-text">Save & Apply</span>
+            </button>
+        </div>
+    </form>
+</div>
+
+<div class="card" style="margin-top: 30px;">
+    <div class="card-title" id="status-title">GFWList Status</div>
+    <div id="gfwlist-status">
+        <div class="status-item">
+            <span id="status-label">Status:</span>
+            <span id="status-value" class="status-value">Unknown</span>
+        </div>
+        <div class="status-item">
+            <span id="domains-label">Domains:</span>
+            <span id="domains-value" class="status-value">0</span>
+        </div>
+        <div class="status-item">
+            <span id="last-update-label">Last Update:</span>
+            <span id="last-update-value" class="status-value">Never</span>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 30px;">
+    <div class="card-title" id="features-title">Features</div>
+    <div class="feature-list">
+        <div class="feature-item">
+            <span class="iconify" data-icon="ph:brain-bold" style="font-size: 1.5rem; color: #ff8c00;"></span>
+            <div>
+                <h4 id="feature-smart-title">Smart Mode</h4>
+                <p id="feature-smart-desc">Prioritizes detecting Cloudflare sites for ECH IP injection, otherwise uses TLS fragmentation to bypass SNI blocking.</p>
+            </div>
+        </div>
+        <div class="feature-item">
+            <span class="iconify" data-icon="ph:sort-ascending-bold" style="font-size: 1.5rem; color: #ff8c00;"></span>
+            <div>
+                <h4 id="feature-priority-title">Priority Logic</h4>
+                <p id="feature-priority-desc">Manually defined 'Rules' have the highest priority. Auto routing applies if no rules match.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "Auto Routing",
+            config: "Routing Configuration",
+            mode: "Mode",
+            url: "GFWList URL",
+            refresh: "Refresh GFWList",
+            save: "Save & Apply",
+            status: "GFWList Status",
+            statusLabel: "Status:",
+            domains: "Domains:",
+            lastUpdate: "Last Update:",
+            features: "Features",
+            featureSmart: "Smart Mode",
+            featureSmartDesc: "Prioritizes detecting Cloudflare sites for ECH IP injection, otherwise uses TLS fragmentation to bypass SNI blocking.",
+            featurePriority: "Priority Logic",
+            featurePriorityDesc: "Manually defined 'Rules' have the highest priority. Auto routing applies if no rules match.",
+            saved: "Routing settings saved",
+            refreshing: "Refreshing GFWList...",
+            refreshed: "GFWList refreshed: {count} domains loaded"
+        },
+        zh: {
+            back: "返回",
+            title: "自动分流",
+            config: "分流配置",
+            mode: "模式",
+            url: "GFWList地址",
+            refresh: "刷新GFWList",
+            save: "保存并应用",
+            status: "GFWList状态",
+            statusLabel: "状态：",
+            domains: "域名数：",
+            lastUpdate: "最后更新：",
+            features: "功能说明",
+            featureSmart: "智能模式",
+            featureSmartDesc: "优先检测是否为Cloudflare站点，是则注入ECH优选IP，否则走TLS分片躲避SNI阻断。",
+            featurePriority: "优先级逻辑",
+            featurePriorityDesc: "手动定义的【规则】页面条目拥有最高优先级。若均未命中且分流开启，则走此处的自动逻辑。",
+            saved: "分流设置已保存",
+            refreshing: "正在刷新GFWList...",
+            refreshed: "GFWList已刷新：加载{count}个域名"
+        }
+    };
+
+    function loadConfig() {
+        fetch('/routing', { headers: { 'Accept': 'application/json' } })
+            .then(res => res.json())
+            .then(data => {
+                const config = data.config || {};
+                document.getElementById('routing-mode').value = config.mode || '';
+                document.getElementById('gfwlist-url').value = config.gfwlist_url || '';
+                document.getElementById('last-update-value').textContent = config.last_update || 'Never';
+            })
+            .catch(err => console.error('Failed to load config:', err));
+    }
+
+    document.getElementById('routing-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const config = {
+            mode: document.getElementById('routing-mode').value,
+            gfwlist_url: document.getElementById('gfwlist-url').value
+        };
+
+        fetch('/routing', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        })
+        .then(res => res.json())
+        .then(data => {
+            alert(currentLang === 'zh' ? i18n.zh.saved : i18n.en.saved);
+            loadConfig();
+        })
+        .catch(err => alert('Error: ' + err));
+    });
+
+    function refreshGFWList() {
+        alert(currentLang === 'zh' ? i18n.zh.refreshing : i18n.en.refreshing);
+    }
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('config-title').textContent = t.config;
+        document.getElementById('label-mode').textContent = t.mode;
+        document.getElementById('label-url').textContent = t.url;
+        document.getElementById('refresh-text').textContent = t.refresh;
+        document.getElementById('save-text').textContent = t.save;
+        document.getElementById('status-title').textContent = t.status;
+        document.getElementById('status-label').textContent = t.statusLabel;
+        document.getElementById('domains-label').textContent = t.domains;
+        document.getElementById('last-update-label').textContent = t.lastUpdate;
+        document.getElementById('features-title').textContent = t.features;
+        document.getElementById('feature-smart-title').textContent = t.featureSmart;
+        document.getElementById('feature-smart-desc').textContent = t.featureSmartDesc;
+        document.getElementById('feature-priority-title').textContent = t.featurePriority;
+        document.getElementById('feature-priority-desc').textContent = t.featurePriorityDesc;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadConfig();
+        updateUI();
+    });
+</script>
+{{end}}
