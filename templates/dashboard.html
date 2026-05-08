@@ -1,0 +1,352 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">Dashboard</h1>
+
+<div class="toolbar">
+    <button class="btn-sci" onclick="toggleProxy()" id="btn-proxy">
+        <span class="iconify" data-icon="ph:play-bold" id="icon-proxy"></span>
+        <span id="btn-proxy-text">Start Proxy</span>
+    </button>
+    <button class="btn-sci secondary" onclick="toggleSysProxy()" id="btn-sysproxy">
+        <span class="iconify" data-icon="ph:globe-bold" id="icon-sysproxy"></span>
+        <span id="btn-sysproxy-text">System Proxy: Off</span>
+    </button>
+    <button class="btn-sci secondary" onclick="toggleTUN()" id="btn-tun">
+        <span class="iconify" data-icon="ph:network-bold" id="icon-tun"></span>
+        <span id="btn-tun-text">TUN: Off</span>
+    </button>
+    <button class="btn-sci secondary" onclick="toggleDoH()" id="btn-doh" disabled>
+        <span class="iconify" data-icon="ph:globe-hemisphere-west-bold" id="icon-doh"></span>
+        <span id="btn-doh-text">DoH: Off</span>
+    </button>
+</div>
+
+<div class="form-grid">
+    <div class="card">
+        <div class="card-title">
+            <span class="iconify" data-icon="ph:cpu-bold"></span>
+            <span id="section-core">Core Status</span>
+        </div>
+        <div style="display: grid; gap: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-secondary); font-size: 0.9rem;" id="label-run-status">Running Status</span>
+                <span class="status-badge status-disabled" id="badge-running">Stopped</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-secondary); font-size: 0.9rem;" id="label-work-mode">Work Mode</span>
+                <span style="color: var(--accent-orange); font-family: 'Orbitron', monospace; font-size: 1rem;" id="text-mode">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-secondary); font-size: 0.9rem;" id="label-port">Listen Port</span>
+                <span style="font-family: 'Orbitron', monospace; font-size: 1rem;" id="text-port">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-secondary); font-size: 0.9rem;" id="label-tun-status">TUN Status</span>
+                <span class="status-badge status-disabled" id="badge-tun">Off</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">
+            <span class="iconify" data-icon="ph:activity-bold"></span>
+            <span id="section-traffic">Real-time Traffic</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 16px; padding: 16px;">
+                <div style="display: flex; align-items: center; gap: 8px; color: #22c55e; margin-bottom: 8px;">
+                    <span class="iconify" data-icon="ph:arrow-down-right-bold"></span>
+                    <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em;" id="label-download">Download</span>
+                </div>
+                <div style="font-family: 'Orbitron', monospace; font-size: 1.5rem;" id="text-down-speed">0 B/s</div>
+            </div>
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 16px; padding: 16px;">
+                <div style="display: flex; align-items: center; gap: 8px; color: var(--accent-orange); margin-bottom: 8px;">
+                    <span class="iconify" data-icon="ph:arrow-up-right-bold"></span>
+                    <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em;" id="label-upload">Upload</span>
+                </div>
+                <div style="font-family: 'Orbitron', monospace; font-size: 1.5rem;" id="text-up-speed">0 B/s</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">
+            <span class="iconify" data-icon="ph:shield-check-bold"></span>
+            <span id="section-cert">Certificate Status</span>
+        </div>
+        <div style="display: grid; gap: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255, 255, 255, 0.03); border-radius: 12px;" id="cert-status-box">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="iconify" data-icon="ph:shield-warning-bold" style="color: #ef4444; font-size: 1.2rem;" id="cert-icon"></span>
+                    <span style="font-size: 0.9rem; font-weight: 500;" id="text-cert-status">Not Installed</span>
+                </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-secondary); font-size: 0.85rem; font-family: monospace;" id="text-cert-path">-</span>
+                <button class="btn-sci secondary" style="padding: 8px 16px; font-size: 0.75rem;" onclick="viewCert()" id="btn-view-cert">
+                    <span class="iconify" data-icon="ph:eye-bold"></span>
+                    <span id="label-view">View</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">
+            <span class="iconify" data-icon="ph:plug-bold"></span>
+            <span id="section-conn">Connection Info</span>
+        </div>
+        <div style="display: grid; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(255, 140, 0, 0.1); border: 1px solid rgba(255, 140, 0, 0.3); border-radius: 12px;">
+                <span class="iconify" data-icon="ph:lightning-bold" style="color: var(--accent-orange); font-size: 1.2rem;"></span>
+                <span style="font-family: 'Orbitron', monospace; font-size: 1rem; color: var(--accent-orange);" id="text-conn-addr">127.0.0.1:8080</span>
+            </div>
+            <div style="display: flex; justify-content: flex-end;">
+                <span class="status-badge status-enabled" id="label-ready">Ready</span>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "Dashboard",
+            startProxy: "Start Proxy",
+            stopProxy: "Stop Proxy",
+            sysProxyOn: "System Proxy: On",
+            sysProxyOff: "System Proxy: Off",
+            tunOn: "TUN: On",
+            tunOff: "TUN: Off",
+            coreStatus: "Core Status",
+            runStatus: "Running Status",
+            workMode: "Work Mode",
+            listenPort: "Listen Port",
+            tunStatus: "TUN Status",
+            realtimeTraffic: "Real-time Traffic",
+            download: "Download",
+            upload: "Upload",
+            certStatus: "Certificate Status",
+            installed: "Installed",
+            notInstalled: "Not Installed",
+            view: "View",
+            connInfo: "Connection Info",
+            ready: "Ready",
+            running: "Running",
+            stopped: "Stopped",
+            on: "On",
+            off: "Off",
+            dohOn: "DoH: On",
+            dohOff: "DoH: Off",
+            dohDesc: "DoH (Proxy stopped only)"
+        },
+        zh: {
+            back: "返回",
+            title: "控制面板",
+            startProxy: "启动代理",
+            stopProxy: "停止代理",
+            sysProxyOn: "系统代理: 开",
+            sysProxyOff: "系统代理: 关",
+            tunOn: "TUN: 开",
+            tunOff: "TUN: 关",
+            coreStatus: "核心状态",
+            runStatus: "运行状态",
+            workMode: "工作模式",
+            listenPort: "监听端口",
+            tunStatus: "TUN 状态",
+            realtimeTraffic: "实时流量",
+            download: "下载",
+            upload: "上传",
+            certStatus: "证书状态",
+            installed: "已安装",
+            notInstalled: "未安装",
+            view: "查看",
+            connInfo: "连接信息",
+            ready: "就绪",
+            running: "运行中",
+            stopped: "已停止",
+            on: "开",
+            off: "关",
+            dohOn: "DoH: 开",
+            dohOff: "DoH: 关",
+            dohDesc: "DoH（仅代理关闭时可用）"
+        }
+    };
+
+    let proxyRunning = false;
+    let sysProxyEnabled = false;
+    let tunRunning = false;
+    let dohEnabled = false;
+    let isOperating = false;
+
+    function formatSpeed(bytes) {
+        if (bytes < 1024) return Math.round(bytes) + ' B/s';
+        if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB/s';
+        return Math.round(bytes / (1024 * 1024)) + ' MB/s';
+    }
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('btn-proxy-text').textContent = proxyRunning ? t.stopProxy : t.startProxy;
+        document.getElementById('btn-sysproxy-text').textContent = sysProxyEnabled ? t.sysProxyOn : t.sysProxyOff;
+        document.getElementById('btn-tun-text').textContent = tunRunning ? t.tunOn : t.tunOff;
+        document.getElementById('section-core').textContent = t.coreStatus;
+        document.getElementById('label-run-status').textContent = t.runStatus;
+        document.getElementById('label-work-mode').textContent = t.workMode;
+        document.getElementById('label-port').textContent = t.listenPort;
+        document.getElementById('label-tun-status').textContent = t.tunStatus;
+        document.getElementById('section-traffic').textContent = t.realtimeTraffic;
+        document.getElementById('label-download').textContent = t.download;
+        document.getElementById('label-upload').textContent = t.upload;
+        document.getElementById('section-cert').textContent = t.certStatus;
+        document.getElementById('section-conn').textContent = t.connInfo;
+        document.getElementById('label-view').textContent = t.view;
+        document.getElementById('label-ready').textContent = t.ready;
+        document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
+        document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
+
+        // Update icons based on state
+        document.getElementById('icon-proxy').setAttribute('data-icon', proxyRunning ? 'ph:stop-bold' : 'ph:play-bold');
+        document.getElementById('icon-sysproxy').setAttribute('data-icon', sysProxyEnabled ? 'ph:globe-simple-bold' : 'ph:globe-bold');
+        document.getElementById('icon-tun').setAttribute('data-icon', tunRunning ? 'ph:network-slash-bold' : 'ph:network-bold');
+        document.getElementById('icon-doh').setAttribute('data-icon', dohEnabled ? 'ph:globe-hemisphere-east-bold' : 'ph:globe-hemisphere-west-bold');
+
+        // Update DoH button state - only enabled when proxy is stopped
+        const dohBtn = document.getElementById('btn-doh');
+        if (proxyRunning) {
+            dohBtn.disabled = true;
+            document.getElementById('btn-doh-text').textContent = t.dohDesc;
+        } else {
+            dohBtn.disabled = false;
+            document.getElementById('btn-doh-text').textContent = dohEnabled ? t.dohOn : t.dohOff;
+        }
+    }
+
+    async function refresh() {
+        try {
+            const [statusRes, statsRes, tunRes, dohRes] = await Promise.all([
+                fetch('/status', {headers: {'Accept': 'application/json'}}).then(r => r.json()),
+                fetch('/stats', {headers: {'Accept': 'application/json'}}).then(r => r.json()),
+                fetch('/tun/status', {headers: {'Accept': 'application/json'}}).then(r => r.json()).catch(() => ({running: false})),
+                fetch('/api/doh', {headers: {'Accept': 'application/json'}}).then(r => r.json()).catch(() => ({enabled: false}))
+            ]);
+
+            proxyRunning = !statusRes.directMode;
+            sysProxyEnabled = statusRes.systemProxy || false;
+            tunRunning = tunRes.running || false;
+            dohEnabled = dohRes.enabled || false;
+
+            const t = i18n[currentLang];
+            document.getElementById('badge-running').textContent = proxyRunning ? t.running : t.stopped;
+            document.getElementById('badge-running').className = 'status-badge ' + (proxyRunning ? 'status-enabled' : 'status-disabled');
+            document.getElementById('text-mode').textContent = statusRes.mode || '-';
+            document.getElementById('text-port').textContent = statusRes.listenAddr ? statusRes.listenAddr.split(':')[1] : '-';
+            document.getElementById('text-conn-addr').textContent = statusRes.listenAddr || '127.0.0.1:8080';
+
+            document.getElementById('badge-tun').textContent = tunRunning ? t.on : t.off;
+            document.getElementById('badge-tun').className = 'status-badge ' + (tunRunning ? 'status-enabled' : 'status-disabled');
+
+            if (statsRes) {
+                document.getElementById('text-down-speed').textContent = formatSpeed(statsRes.down || 0);
+                document.getElementById('text-up-speed').textContent = formatSpeed(statsRes.up || 0);
+            }
+
+            updateUI();
+        } catch (e) {
+            console.error("Dashboard refresh error:", e);
+        }
+    }
+
+    async function toggleProxy() {
+        if (isOperating) return;
+        isOperating = true;
+        try {
+            if (!proxyRunning) {
+                await fetch('/proxy/start', {method: 'POST'});
+            } else {
+                await fetch('/proxy/stop', {method: 'POST'});
+            }
+            await new Promise(r => setTimeout(r, 600));
+            await refresh();
+        } catch (e) {
+            console.error("Failed to toggle proxy:", e);
+        } finally {
+            isOperating = false;
+        }
+    }
+
+    async function toggleSysProxy() {
+        if (isOperating) return;
+        isOperating = true;
+        try {
+            if (sysProxyEnabled) {
+                await fetch('/sysproxy/disable', {method: 'POST'});
+            } else {
+                await fetch('/sysproxy/enable', {method: 'POST'});
+            }
+            await new Promise(r => setTimeout(r, 800));
+            await refresh();
+        } catch (e) {
+            console.error("Failed to toggle system proxy:", e);
+        } finally {
+            isOperating = false;
+        }
+    }
+
+    async function toggleTUN() {
+        if (isOperating) return;
+        isOperating = true;
+        try {
+            if (tunRunning) {
+                await fetch('/tun/stop', {method: 'POST'});
+            } else {
+                await fetch('/tun/start', {method: 'POST'});
+            }
+            await new Promise(r => setTimeout(r, 1200));
+            await refresh();
+        } catch (e) {
+            console.error("Failed to toggle TUN:", e);
+        } finally {
+            isOperating = false;
+        }
+    }
+
+    async function toggleDoH() {
+        if (isOperating) return;
+        if (proxyRunning) {
+            alert('DoH can only be enabled when proxy is stopped');
+            return;
+        }
+        isOperating = true;
+        try {
+            const action = dohEnabled ? 'disable' : 'enable';
+            await fetch('/api/doh?action=' + action, {method: 'POST'});
+            await new Promise(r => setTimeout(r, 300));
+            await refresh();
+        } catch (e) {
+            console.error("Failed to toggle DoH:", e);
+        } finally {
+            isOperating = false;
+        }
+    }
+
+    function viewCert() {
+        window.open('/cert', '_blank');
+    }
+
+    function initPage() {
+        refresh();
+        setInterval(refresh, 5000);
+    }
+</script>
+{{end}}

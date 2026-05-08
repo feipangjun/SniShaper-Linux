@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,6 +71,7 @@ type ProxyServer struct {
 	bytesDown     int64
 	bytesUp       int64
 	certBypassMap sync.Map
+	directMode    bool // true = all traffic goes direct, bypassing proxy rules
 }
 
 type RuleManager struct {
@@ -83,11 +85,13 @@ type RuleManager struct {
 	tunConfig                  TUNConfig
 	closeToTray                bool
 	autoStart                  bool
+	autoProxy                  bool
 	showMainOnAutoStart        bool
 	autoEnableProxyOnAutoStart bool
 	serverHost                 string
 	serverAuth                 string
 	listenPort                 string
+	apiPort                    string
 	echProfiles                []ECHProfile
 	autoRouter                 *AutoRouter
 	autoRoutingConfig          AutoRoutingConfig
@@ -166,10 +170,12 @@ type ECHProfile struct {
 
 type SettingsConfig struct {
 	ListenPort                 string            `json:"listen_port"`
+	ApiPort                    string            `json:"api_port,omitempty"`
 	ServerHost                 string            `json:"server_host,omitempty"`
 	ServerAuth                 string            `json:"server_auth,omitempty"`
 	CloseToTray                *bool             `json:"close_to_tray,omitempty"`
 	AutoStart                  *bool             `json:"auto_start,omitempty"`
+	AutoProxy                  *bool             `json:"auto_proxy,omitempty"`
 	ShowMainWindowOnAutoStart  *bool             `json:"show_main_window_on_auto_start,omitempty"`
 	AutoEnableProxyOnAutoStart *bool             `json:"auto_enable_proxy_on_auto_start,omitempty"`
 	AutoRouting                AutoRoutingConfig `json:"auto_routing,omitempty"`
@@ -1035,6 +1041,10 @@ func (p *ProxyServer) GetAllCFIPsWithStats() []*IPStats {
 	return nil
 }
 
+func (p *ProxyServer) GetCFPoolIPs() []*IPStats {
+	return p.GetAllCFIPsWithStats()
+}
+
 func (p *ProxyServer) GetListenAddr() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -1069,6 +1079,18 @@ func (p *ProxyServer) GetMode() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.mode
+}
+
+func (p *ProxyServer) SetDirectMode(direct bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.directMode = direct
+}
+
+func (p *ProxyServer) IsDirectMode() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.directMode
 }
 
 func (p *ProxyServer) Start() error {
@@ -1162,6 +1184,11 @@ func (p *ProxyServer) IsRunning() bool {
 }
 
 func (p *ProxyServer) handleRequest(w http.ResponseWriter, req *http.Request) {
+
+	if p.IsDirectMode() {
+		p.directConnect(w, req)
+		return
+	}
 
 	host := req.Host
 	if host == "" {
@@ -1438,21 +1465,167 @@ func (p *ProxyServer) handleConnect(w http.ResponseWriter, req *http.Request, ru
 	}
 }
 
+// defaultDoHServers 默认DoH解析服务器列表，按顺序尝试
+var defaultDoHServers = []string{
+	"https://1.12.12.12/resolve",
+	"https://doh.pub/resolve",
+	"https://120.53.53.53/resolve",
+	"https://dns.alidns.com/resolve",
+	"https://223.6.6.6/resolve",
+	"https://223.5.5.5/resolve",
+	"https://dns.google/resolve",
+	"https://cloudflare-dns.com/resolve",
+	"https://doh.360.cn/resolve",
+	"https://101.6.6.6:8443/resolve",
+}
+
+// DoHEnabled 控制是否使用DoH解析（仅代理关闭时可用）
+var DoHEnabled = false
+
+// resolveWithDoHServers 使用提供的DoH服务器列表按顺序解析域名
+func resolveWithDoHServers(ctx context.Context, domain string, servers []string) (net.IP, error) {
+	if len(servers) == 0 {
+		return nil, fmt.Errorf("no DoH servers provided")
+	}
+
+	// 尝试每个服务器，失败则换下一个，循环
+	attempts := 0
+	maxAttempts := len(servers) * 2 // 最多循环2轮
+
+	for attempts < maxAttempts {
+		server := servers[attempts%len(servers)]
+		attempts++
+
+		ip, err := queryDoHServer(ctx, server, domain)
+		if err == nil && ip != nil {
+			return ip, nil
+		}
+
+		log.Printf("[Direct] DoH server %s failed for %s: %v, trying next", server, domain, err)
+	}
+
+	return nil, fmt.Errorf("all DoH servers failed after %d attempts", attempts)
+}
+
+// queryDoHServer 向单个DoH服务器查询域名
+func queryDoHServer(ctx context.Context, serverURL, domain string) (net.IP, error) {
+	// 构建查询URL
+	queryURL := fmt.Sprintf("%s?name=%s&type=A", serverURL, url.QueryEscape(domain))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Accept", "application/dns-json")
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Status int `json:"Status"`
+		Answer []struct {
+			Type int    `json:"type"`
+			Data string `json:"data"`
+		} `json:"Answer"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	if result.Status != 0 {
+		return nil, fmt.Errorf("DNS error status: %d", result.Status)
+	}
+
+	// 返回第一个A记录
+	for _, ans := range result.Answer {
+		if ans.Type == 1 { // A记录
+			ip := net.ParseIP(ans.Data)
+			if ip != nil {
+				return ip, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("no A record found")
+}
+
 func (p *ProxyServer) directConnect(w http.ResponseWriter, req *http.Request) {
 	targetAuthority := req.URL.Host
 	if targetAuthority == "" {
 		targetAuthority = req.Host
 	}
-	targetAddr := ensureAddrWithPort(targetAuthority, "443")
 
-	log.Printf("[Direct] Connecting to %s", targetAddr)
+	// Extract hostname from targetAuthority
+	host, port, err := net.SplitHostPort(targetAuthority)
+	if err != nil {
+		host = targetAuthority
+		port = "443"
+	}
+
+	// Check if host is already an IP address
+	targetIP := net.ParseIP(host)
+	var targetAddr string
+
+	if targetIP != nil {
+		// Host is already an IP, use it directly
+		targetAddr = net.JoinHostPort(host, port)
+		log.Printf("[Direct] Connecting to %s (IP)", targetAddr)
+	} else {
+		// Host is a domain,根据DoH开关决定是否使用DoH解析
+		if DoHEnabled {
+			// 使用DoH解析
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			ip, err := resolveWithDoHServers(ctx, host, defaultDoHServers)
+			if err != nil {
+				log.Printf("[Direct] All DoH servers failed for %s: %v, falling back to system DNS", host, err)
+				// 回退到系统DNS
+				sysIPs, err := net.LookupIP(host)
+				if err != nil || len(sysIPs) == 0 {
+					http.Error(w, "Failed to resolve host", http.StatusBadGateway)
+					return
+				}
+				targetIP = sysIPs[0]
+			} else {
+				targetIP = ip
+			}
+
+			targetAddr = net.JoinHostPort(targetIP.String(), port)
+			log.Printf("[Direct] Connecting to %s -> %s (DoH resolved)", host, targetAddr)
+		} else {
+			// 使用系统DNS解析
+			sysIPs, err := net.LookupIP(host)
+			if err != nil || len(sysIPs) == 0 {
+				http.Error(w, "Failed to resolve host", http.StatusBadGateway)
+				return
+			}
+			targetIP = sysIPs[0]
+			targetAddr = net.JoinHostPort(targetIP.String(), port)
+			log.Printf("[Direct] Connecting to %s -> %s (System DNS)", host, targetAddr)
+		}
+	}
 
 	dialer := &net.Dialer{
-		Timeout:   10 * time.Second,
+		Timeout:   15 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
 	conn, err := dialer.Dial("tcp", targetAddr)
 	if err != nil {
+		log.Printf("[Direct] Failed to connect to %s: %v", targetAddr, err)
 		http.Error(w, "Failed to connect", http.StatusBadGateway)
 		return
 	}
@@ -2044,6 +2217,7 @@ func (rm *RuleManager) loadSettingsConfig() error {
 	// 1. Set internal defaults first
 	rm.closeToTray = true
 	rm.autoStart = false
+	rm.autoProxy = false
 	rm.showMainOnAutoStart = true
 	rm.autoEnableProxyOnAutoStart = false
 
@@ -2055,6 +2229,9 @@ func (rm *RuleManager) loadSettingsConfig() error {
 	if config.ListenPort != "" {
 		rm.listenPort = config.ListenPort
 	}
+	if config.ApiPort != "" {
+		rm.apiPort = config.ApiPort
+	}
 	rm.autoRoutingConfig = config.AutoRouting
 	rm.language = config.Language
 	rm.theme = config.Theme
@@ -2064,6 +2241,9 @@ func (rm *RuleManager) loadSettingsConfig() error {
 	}
 	if config.AutoStart != nil {
 		rm.autoStart = *config.AutoStart
+	}
+	if config.AutoProxy != nil {
+		rm.autoProxy = *config.AutoProxy
 	}
 	if config.ShowMainWindowOnAutoStart != nil {
 		rm.showMainOnAutoStart = *config.ShowMainWindowOnAutoStart
@@ -2237,6 +2417,18 @@ func (rm *RuleManager) SetListenPort(port string) {
 	rm.mu.Unlock()
 }
 
+func (rm *RuleManager) GetApiPort() string {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return rm.apiPort
+}
+
+func (rm *RuleManager) SetApiPort(port string) {
+	rm.mu.Lock()
+	rm.apiPort = port
+	rm.mu.Unlock()
+}
+
 func (rm *RuleManager) SaveConfig() error {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
@@ -2283,6 +2475,12 @@ func (rm *RuleManager) GetAutoStart() bool {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	return rm.autoStart
+}
+
+func (rm *RuleManager) GetAutoProxy() bool {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return rm.autoProxy
 }
 
 func (rm *RuleManager) SetAutoStart(enabled bool) error {
@@ -2529,18 +2727,25 @@ func (rm *RuleManager) saveSettingsConfig() error {
 	if listenPort == "" {
 		listenPort = "8080"
 	}
+	apiPort := rm.apiPort
+	if apiPort == "" {
+		apiPort = "5173"
+	}
 	closeToTray := rm.closeToTray
 	autoStart := rm.autoStart
+	autoProxy := rm.autoProxy
 	showMainOnAutoStart := rm.showMainOnAutoStart
 	autoEnableProxyOnAutoStart := rm.autoEnableProxyOnAutoStart
 	cloudflareConfig := rm.cloudflareConfig
 	tunConfig := normalizeTUNConfig(rm.tunConfig)
 	settings := SettingsConfig{
 		ListenPort:                 listenPort,
+		ApiPort:                    apiPort,
 		ServerHost:                 rm.serverHost,
 		ServerAuth:                 rm.serverAuth,
 		CloseToTray:                &closeToTray,
 		AutoStart:                  &autoStart,
+		AutoProxy:                  &autoProxy,
 		ShowMainWindowOnAutoStart:  &showMainOnAutoStart,
 		AutoEnableProxyOnAutoStart: &autoEnableProxyOnAutoStart,
 		CloudflareConfig:           cloudflareConfig,
@@ -3259,7 +3464,7 @@ func (p *ProxyServer) establishUpstreamConn(host string, rule Rule, dialCandidat
 	return nil, "", finalErr
 }
 
-func (p *ProxyServer) dialWithRule(ctx context.Context, network, addr string, rule Rule) (net.Conn, error) {
+func (p *ProxyServer) dialWithRule(ctx context.Context, network, addr string, _ Rule) (net.Conn, error) {
 	// Default direct dialer
 	dialer := &net.Dialer{
 		Timeout:   10 * time.Second,

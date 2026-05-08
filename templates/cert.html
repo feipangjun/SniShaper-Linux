@@ -1,0 +1,179 @@
+{{define "content"}}
+<a href="/" class="back-link">
+    <span class="iconify" data-icon="ph:caret-left-bold"></span>
+    <span id="back-text">Back</span>
+</a>
+
+<h1 id="page-title">Certificate Management</h1>
+
+<div class="form-grid">
+    <div class="card">
+        <div class="card-title">
+            <span class="iconify" data-icon="ph:shield-check-bold"></span>
+            <span id="section-status">Certificate Status</span>
+        </div>
+        <div style="display: grid; gap: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-secondary); font-size: 0.9rem;" id="label-cert-path">Certificate Path</span>
+                <span style="font-family: monospace; font-size: 0.85rem; color: var(--accent-orange);" id="text-cert-path">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-secondary); font-size: 0.9rem;" id="label-cert-status">Installation Status</span>
+                <span class="status-badge status-disabled" id="badge-cert-status">Checking...</span>
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-sci" onclick="openCertDir()" id="btn-open-dir">
+                    <span class="iconify" data-icon="ph:folder-open-bold"></span>
+                    <span id="btn-open-text">Open Directory</span>
+                </button>
+                <button class="btn-sci secondary" onclick="regenerateCert()" id="btn-regenerate">
+                    <span class="iconify" data-icon="ph:arrow-counter-clockwise-bold"></span>
+                    <span id="btn-regenerate-text">Regenerate</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">
+            <span class="iconify" data-icon="ph:certificate-bold"></span>
+            <span id="section-installed">Installed Certificates</span>
+        </div>
+        <div id="cert-list" style="display: grid; gap: 12px;">
+            <div style="color: var(--text-secondary); font-size: 0.9rem; text-align: center; padding: 24px;" id="text-loading">
+                Loading...
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-title">
+            <span class="iconify" data-icon="ph:info-bold"></span>
+            <span id="section-help">Installation Help</span>
+        </div>
+        <div style="background: rgba(255, 140, 0, 0.05); border: 1px solid rgba(255, 140, 0, 0.2); border-radius: 12px; padding: 16px;">
+            <pre style="font-family: monospace; font-size: 0.85rem; color: var(--text-secondary); white-space: pre-wrap; margin: 0;" id="text-install-help"></pre>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    const i18n = {
+        en: {
+            back: "Back",
+            title: "Certificate Management",
+            status: "Certificate Status",
+            certPath: "Certificate Path",
+            installStatus: "Installation Status",
+            openDir: "Open Directory",
+            regenerate: "Regenerate",
+            installedCerts: "Installed Certificates",
+            loading: "Loading...",
+            noCerts: "No certificates installed",
+            installHelp: "Installation Help",
+            installed: "Installed",
+            notInstalled: "Not Installed",
+            subject: "Subject",
+            thumbprint: "Thumbprint"
+        },
+        zh: {
+            back: "返回",
+            title: "证书管理",
+            status: "证书状态",
+            certPath: "证书路径",
+            installStatus: "安装状态",
+            openDir: "打开目录",
+            regenerate: "重新生成",
+            installedCerts: "已安装证书",
+            loading: "加载中...",
+            noCerts: "未安装证书",
+            installHelp: "安装帮助",
+            installed: "已安装",
+            notInstalled: "未安装",
+            subject: "主题",
+            thumbprint: "指纹"
+        }
+    };
+
+    let certData = null;
+
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('section-status').textContent = t.status;
+        document.getElementById('label-cert-path').textContent = t.certPath;
+        document.getElementById('label-cert-status').textContent = t.installStatus;
+        document.getElementById('btn-open-text').textContent = t.openDir;
+        document.getElementById('btn-regenerate-text').textContent = t.regenerate;
+        document.getElementById('section-installed').textContent = t.installedCerts;
+        document.getElementById('section-help').textContent = t.installHelp;
+        document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
+        document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
+    }
+
+    async function refresh() {
+        try {
+            const [statusRes, pathRes] = await Promise.all([
+                fetch('/cert', {headers: {'Accept': 'application/json'}}).then(r => r.json()),
+                fetch('/cert?action=path', {headers: {'Accept': 'application/json'}}).then(r => r.json())
+            ]);
+
+            certData = statusRes;
+            document.getElementById('text-cert-path').textContent = pathRes.path || '-';
+            
+            const t = i18n[currentLang];
+            const badge = document.getElementById('badge-cert-status');
+            if (statusRes.Installed) {
+                badge.textContent = t.installed;
+                badge.className = 'status-badge status-enabled';
+            } else {
+                badge.textContent = t.notInstalled;
+                badge.className = 'status-badge status-disabled';
+            }
+
+            document.getElementById('text-install-help').textContent = statusRes.InstallHelp || '';
+
+            const certs = statusRes.InstalledCerts || [];
+            const certListEl = document.getElementById('cert-list');
+            if (certs.length === 0) {
+                certListEl.innerHTML = `<div style="color: var(--text-secondary); font-size: 0.9rem; text-align: center; padding: 24px;">${t.noCerts}</div>`;
+            } else {
+                certListEl.innerHTML = certs.map(cert => `
+                    <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+                        <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 8px; word-break: break-all;">${cert.subject}</div>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary); font-family: monospace; word-break: break-all;">${cert.thumbprint}</div>
+                    </div>
+                `).join('');
+            }
+
+            updateUI();
+        } catch (e) {
+            console.error("Cert page refresh error:", e);
+        }
+    }
+
+    function openCertDir() {
+        fetch('/cert?action=open_dir', {method: 'POST'});
+    }
+
+    async function regenerateCert() {
+        if (!confirm(currentLang === 'zh' ? '确定要重新生成证书吗？' : 'Are you sure you want to regenerate the certificate?')) {
+            return;
+        }
+        try {
+            await fetch('/cert?action=regenerate', {method: 'POST'});
+            await new Promise(r => setTimeout(r, 1000));
+            await refresh();
+        } catch (e) {
+            console.error("Failed to regenerate certificate:", e);
+        }
+    }
+
+    function initPage() {
+        refresh();
+    }
+</script>
+{{end}}

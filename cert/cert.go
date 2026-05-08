@@ -24,7 +24,7 @@ type CertManager struct {
 
 func InitCertManager(certPath string) (*CertManager, error) {
 	if certPath == "" {
-		certPath = filepath.Join(os.Getenv("HOME"), ".snishaper", "cert")
+		certPath = "cert"
 	}
 
 	if err := os.MkdirAll(certPath, 0755); err != nil {
@@ -191,7 +191,32 @@ func (cm *CertManager) GetCAKey() interface{} {
 }
 
 func (cm *CertManager) IsCAInstalled() bool {
-	return true
+	caDest := "/usr/local/share/ca-certificates/snishaper-ca.crt"
+	_, err := os.Stat(caDest)
+	return err == nil
+}
+
+type InstalledCert struct {
+	Subject    string `json:"subject"`
+	Thumbprint string `json:"thumbprint"`
+	Token      string `json:"token"`
+}
+
+func (cm *CertManager) GetInstalledCerts() []InstalledCert {
+	cm.certMu.RLock()
+	defer cm.certMu.RUnlock()
+
+	if cm.caCert == nil {
+		return []InstalledCert{}
+	}
+
+	return []InstalledCert{
+		{
+			Subject:    cm.caCert.Subject.String(),
+			Thumbprint: fmt.Sprintf("%x", cm.caCert.Raw),
+			Token:      "ca-cert",
+		},
+	}
 }
 
 type CAInstallStatus struct {
@@ -205,11 +230,13 @@ func (cm *CertManager) GetCAInstallStatus() CAInstallStatus {
 	cm.certMu.RLock()
 	defer cm.certMu.RUnlock()
 
+	installed := cm.IsCAInstalled()
+
 	return CAInstallStatus{
-		Installed:   true,
+		Installed:   installed,
 		Platform:    "linux",
 		CertPath:    cm.caPath,
-		InstallHelp: "CA 证书已生成在: " + cm.caPath + "\n如需手动安装，请将 ca.crt 复制到 /usr/local/share/ca-certificates/ 并运行 update-ca-certificates",
+		InstallHelp: "CA 证书位于: " + cm.caPath + "\n\n安装步骤：\n1. sudo cp " + cm.caPath + " /usr/local/share/ca-certificates/snishaper-ca.crt\n2. sudo update-ca-certificates\n3. 重启浏览器",
 	}
 }
 

@@ -6,158 +6,607 @@
 
 <h1 id="page-title">Settings</h1>
 
-<div class="tabs">
-    <button class="tab-btn active" onclick="showTab('general')" id="tab-general">General</button>
-    <button class="tab-btn" onclick="showTab('cert')" id="tab-cert">Certificate</button>
-    <button class="tab-btn" onclick="showTab('tun')" id="tab-tun">TUN</button>
-    <button class="tab-btn" onclick="showTab('config')" id="tab-config">Config</button>
-</div>
+<div class="settings-grid">
+    <div class="settings-column">
+        <section class="card">
+            <div class="section-header">
+                <span class="iconify section-icon" data-icon="ph:anchor-bold"></span>
+                <h3 id="section-general">General</h3>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-port-title">HTTP Port</div>
+                    <div class="setting-desc" id="setting-port-desc">Proxy server listen port</div>
+                </div>
+                <div class="setting-control">
+                    <input type="number" id="listen-port" class="form-input-small" min="1" max="65535">
+                    <button class="btn-sci small" onclick="savePort()" id="btn-apply-port">Apply</button>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-apiport-title">API Port</div>
+                    <div class="setting-desc" id="setting-apiport-desc">Web API server listen port</div>
+                </div>
+                <div class="setting-control">
+                    <input type="number" id="api-port" class="form-input-small" min="1" max="65535">
+                    <button class="btn-sci small" onclick="saveApiPort()" id="btn-apply-apiport">Apply</button>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-lang-title">Language</div>
+                    <div class="setting-desc" id="setting-lang-desc">Interface language</div>
+                </div>
+                <div class="setting-control">
+                    <div class="lang-toggle">
+                        <button class="lang-btn" onclick="setLanguage('zh')" id="btn-zh">中文</button>
+                        <button class="lang-btn" onclick="setLanguage('en')" id="btn-en">English</button>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-<div id="tab-general" class="tab-content active">
-    <div class="card">
-        <div class="card-title" id="general-title">General Settings</div>
-        <form id="general-form">
-            <div class="form-group">
-                <label for="listen-port" id="label-port">Listen Port</label>
-                <input type="number" class="form-input" id="listen-port" value="8080" min="1" max="65535">
+        <section class="card">
+            <div class="section-header">
+                <span class="iconify section-icon" data-icon="ph:cpu-bold"></span>
+                <h3 id="section-startup">Startup</h3>
             </div>
-            <div class="form-group">
-                <label for="server-host" id="label-host">Server Host</label>
-                <input type="text" class="form-input" id="server-host" placeholder="proxy.example.com">
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-autostart-title">Auto Start</div>
+                    <div class="setting-desc" id="setting-autostart-desc">Start on boot (systemd)</div>
+                </div>
+                <div class="setting-control">
+                    <button class="toggle-btn" id="toggle-autostart" onclick="toggleAutoStart()">
+                        <div class="toggle-track">
+                            <div class="toggle-thumb"></div>
+                        </div>
+                    </button>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="server-auth" id="label-auth">Auth Token</label>
-                <input type="password" class="form-input" id="server-auth" placeholder="Authentication token">
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-autoproxy-title">Auto Enable Proxy</div>
+                    <div class="setting-desc" id="setting-autoproxy-desc">Enable proxy on startup</div>
+                </div>
+                <div class="setting-control">
+                    <button class="toggle-btn" id="toggle-autoproxy" onclick="toggleAutoProxy()">
+                        <div class="toggle-track">
+                            <div class="toggle-thumb"></div>
+                        </div>
+                    </button>
+                </div>
             </div>
-            <button type="submit" class="btn-sci" id="btn-save-general">
-                <span class="iconify" data-icon="ph:floppy-disk-bold"></span>
-                <span id="save-text">Save</span>
-            </button>
-        </form>
+        </section>
+
+        <section class="card">
+            <div class="section-header">
+                <span class="iconify section-icon" data-icon="ph:shield-check-bold"></span>
+                <h3 id="section-security">Security</h3>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-regen-title">Regenerate CA</div>
+                    <div class="setting-desc" id="setting-regen-desc">Reset certificate authority</div>
+                </div>
+                <div class="setting-control">
+                    <button class="btn-sci small" onclick="regenerateCert()" id="btn-regen-cert">Regenerate</button>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-exportcert-title">Export Certificate</div>
+                    <div class="setting-desc" id="setting-exportcert-desc">View certificate directory</div>
+                </div>
+                <div class="setting-control">
+                    <button class="btn-sci small secondary" onclick="openCertDir()" id="btn-open-cert">View</button>
+                </div>
+            </div>
+            <div class="cert-list-section">
+                <div class="cert-status-text" id="cert-status-text">Not Installed</div>
+                <div class="cert-list" id="cert-list">
+                    <div class="cert-empty" id="cert-empty">No certificates installed</div>
+                </div>
+            </div>
+        </section>
     </div>
-</div>
 
-<div id="tab-cert" class="tab-content">
-    <div class="card">
-        <div class="card-title" id="cert-title">CA Certificate</div>
-        <div class="cert-status">
-            <div class="status-item">
-                <span id="cert-status-label">Status:</span>
-                <span id="cert-status-value" class="status-value">Unknown</span>
+    <div class="settings-column">
+        <section class="card">
+            <div class="section-header">
+                <span class="iconify section-icon" data-icon="ph:shield-bold"></span>
+                <h3 id="section-tun">TUN Mode</h3>
             </div>
-            <div class="status-item">
-                <span id="cert-path-label">Path:</span>
-                <span id="cert-path-value" class="status-value">-</span>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-tun-enabled-title">Enable TUN</div>
+                    <div class="setting-desc" id="setting-tun-enabled-desc">TUN interface status</div>
+                </div>
+                <div class="setting-control">
+                    <button class="toggle-btn" id="toggle-tun" onclick="toggleTUN()">
+                        <div class="toggle-track">
+                            <div class="toggle-thumb"></div>
+                        </div>
+                    </button>
+                </div>
             </div>
-        </div>
-        <div class="toolbar">
-            <button class="btn-sci" onclick="exportCert()" id="btn-export">
-                <span class="iconify" data-icon="ph:download-bold"></span>
-                <span id="export-text">Export Cert</span>
-            </button>
-            <button class="btn-sci secondary" onclick="regenerateCert()" id="btn-regenerate">
-                <span class="iconify" data-icon="ph:arrow-clockwise-bold"></span>
-                <span id="regenerate-text">Regenerate</span>
-            </button>
-        </div>
-    </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-mtu-title">MTU</div>
+                    <div class="setting-desc" id="setting-mtu-desc">Maximum transmission unit</div>
+                </div>
+                <div class="setting-control">
+                    <input type="number" id="tun-mtu" class="form-input-small" value="9000" min="1280" max="9000">
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-dnshijack-title">DNS Hijack</div>
+                </div>
+                <div class="setting-control">
+                    <button class="toggle-btn" id="toggle-dns" onclick="toggleDNSHijack()">
+                        <div class="toggle-track">
+                            <div class="toggle-thumb"></div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-autoroute-title">Auto Route</div>
+                </div>
+                <div class="setting-control">
+                    <button class="toggle-btn" id="toggle-autoroute" onclick="toggleAutoRoute()">
+                        <div class="toggle-track">
+                            <div class="toggle-thumb"></div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title" id="setting-strict-title">Strict Route</div>
+                </div>
+                <div class="setting-control">
+                    <button class="toggle-btn" id="toggle-strict" onclick="toggleStrictRoute()">
+                        <div class="toggle-track">
+                            <div class="toggle-thumb"></div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-control" style="width: 100%; justify-content: flex-end;">
+                    <button class="btn-sci small" onclick="saveTUNConfig()" id="btn-save-tun">Save TUN Config</button>
+                </div>
+            </div>
+        </section>
 
-    <div class="card" style="margin-top: 20px;">
-        <div class="card-title" id="install-title">Installation Guide</div>
-        <div class="install-guide">
-            <p id="guide-text">To trust the CA certificate, you need to install it in your system's trust store.</p>
-            <pre class="code-block">
-# Linux (Debian/Ubuntu)
-sudo cp /path/to/snishaper-ca.pem /usr/local/share/ca-certificates/
-sudo update-ca-certificates
+        <section class="card full-width">
+            <div class="section-header">
+                <span class="iconify section-icon" data-icon="ph:cloud-bold"></span>
+                <h3 id="section-cfpool">Cloudflare IP Pool</h3>
+                <button class="health-check-btn" onclick="healthCheckCF()" id="btn-health-cf">Health Check</button>
+            </div>
+            <div class="cf-pool-actions">
+                <button class="btn-sci" onclick="fetchCFIPs()" id="btn-fetch-cf">
+                    <span class="iconify" data-icon="ph:download-bold"></span>
+                    <span id="fetch-cf-text">Fetch IPs</span>
+                </button>
+            </div>
+            <div class="cf-pool-stats">
+                <div class="cf-pool-header">
+                    <span id="cf-pool-count">IP Pool (0)</span>
+                </div>
+                <div class="cf-ip-grid" id="cf-ip-grid">
+                    <div class="cf-empty" id="cf-empty">No IPs fetched</div>
+                </div>
+            </div>
+        </section>
 
-# Or add to browser's certificate manager manually
-            </pre>
-        </div>
-    </div>
-</div>
-
-<div id="tab-tun" class="tab-content">
-    <div class="card">
-        <div class="card-title" id="tun-title">TUN Mode</div>
-        <form id="tun-form">
-            <div class="form-group checkbox-group">
-                <input type="checkbox" id="tun-enabled">
-                <label for="tun-enabled" id="label-enabled">Enable TUN</label>
+        <section class="card">
+            <div class="section-header">
+                <span class="iconify section-icon" data-icon="ph:file-bold"></span>
+                <h3 id="section-config">Configuration</h3>
             </div>
-            <div class="form-group">
-                <label for="tun-name" id="label-name">Device Name</label>
-                <input type="text" class="form-input" id="tun-name" value="tun0">
+            <div class="config-actions">
+                <button class="btn-sci" onclick="exportConfig()" id="btn-export-config">
+                    <span class="iconify" data-icon="ph:export-bold"></span>
+                    <span id="export-config-text">Export Config</span>
+                </button>
+                <label class="btn-sci secondary" id="btn-import-label">
+                    <span class="iconify" data-icon="ph:import-bold"></span>
+                    <span id="import-config-text">Import Config</span>
+                    <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importConfig(this)">
+                </label>
             </div>
-            <div class="form-group">
-                <label for="tun-addr" id="label-addr">Address</label>
-                <input type="text" class="form-input" id="tun-addr" value="10.0.0.1/24">
-            </div>
-            <div class="form-group">
-                <label for="tun-mtu" id="label-mtu">MTU</label>
-                <input type="number" class="form-input" id="tun-mtu" value="9000">
-            </div>
-            <div class="form-group checkbox-group">
-                <input type="checkbox" id="tun-dns">
-                <label for="tun-dns" id="label-dns">DNS Hijack</label>
-            </div>
-            <button type="submit" class="btn-sci" id="btn-save-tun">
-                <span class="iconify" data-icon="ph:floppy-disk-bold"></span>
-                <span id="save-tun-text">Save TUN Config</span>
-            </button>
-        </form>
-    </div>
-</div>
-
-<div id="tab-config" class="tab-content">
-    <div class="card">
-        <div class="card-title" id="import-export-title">Import/Export Configuration</div>
-        <div class="toolbar">
-            <button class="btn-sci" onclick="exportConfig()" id="btn-export-config">
-                <span class="iconify" data-icon="ph:export-bold"></span>
-                <span id="export-config-text">Export Config</span>
-            </button>
-            <label class="btn-sci secondary" id="btn-import-label">
-                <span class="iconify" data-icon="ph:import-bold"></span>
-                <span id="import-config-text">Import Config</span>
-                <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importConfig(this)">
-            </label>
-        </div>
+        </section>
     </div>
 </div>
 {{end}}
 
 {{define "scripts"}}
+<style>
+    .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 24px;
+        margin-top: 30px;
+    }
+    
+    .settings-column {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+    
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+    }
+    
+    .section-icon {
+        font-size: 1.2rem;
+        color: var(--accent-orange);
+    }
+    
+    .section-header h3 {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 0.9rem;
+        color: var(--accent-orange);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+    }
+    
+    .setting-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .setting-item:last-child {
+        border-bottom: none;
+    }
+    
+    .setting-info {
+        flex: 1;
+    }
+    
+    .setting-title {
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-bottom: 4px;
+    }
+    
+    .setting-desc {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+    }
+    
+    .setting-control {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .form-input-small {
+        width: 80px;
+        padding: 8px 12px;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-align: center;
+    }
+    
+    .btn-sci.small {
+        padding: 8px 16px;
+        font-size: 0.8rem;
+    }
+    
+    .lang-toggle {
+        display: flex;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 4px;
+    }
+    
+    .lang-btn {
+        padding: 6px 14px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    
+    .lang-btn.active {
+        background: var(--accent-orange);
+        color: #0a0a0f;
+    }
+    
+    .toggle-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+    }
+    
+    .toggle-track {
+        width: 44px;
+        height: 24px;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        position: relative;
+        transition: all 0.3s;
+    }
+    
+    .toggle-btn.active .toggle-track {
+        background: var(--accent-orange);
+        border-color: var(--accent-orange);
+    }
+    
+    .toggle-thumb {
+        width: 18px;
+        height: 18px;
+        background: white;
+        border-radius: 50%;
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        transition: transform 0.3s;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    .toggle-btn.active .toggle-thumb {
+        transform: translateX(20px);
+    }
+    
+    .cert-list-section {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+    }
+    
+    .cert-status-text {
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: var(--text-secondary);
+    }
+    
+    .cert-list {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .cert-empty {
+        text-align: center;
+        padding: 30px;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+    
+    .cert-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        margin-bottom: 8px;
+    }
+    
+    .cert-item-info {
+        flex: 1;
+    }
+    
+    .cert-item-subject {
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+    
+    .cert-item-thumbprint {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        font-family: monospace;
+    }
+    
+    .cert-item-delete {
+        padding: 6px 12px;
+        background: rgba(255, 68, 68, 0.1);
+        border: 1px solid rgba(255, 68, 68, 0.3);
+        color: #ff4444;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.75rem;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    
+    .cert-item-delete:hover {
+        background: rgba(255, 68, 68, 0.2);
+    }
+    
+    .full-width {
+        grid-column: 1 / -1;
+    }
+    
+    .cf-pool-actions {
+        margin-bottom: 20px;
+    }
+    
+    .cf-pool-stats {
+        background: var(--bg-input);
+        border-radius: 16px;
+        padding: 20px;
+    }
+    
+    .cf-pool-header {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+    }
+    
+    .cf-ip-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 12px;
+        max-height: 320px;
+        overflow-y: auto;
+    }
+    
+    .cf-ip-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        transition: all 0.2s;
+    }
+    
+    .cf-ip-item:hover {
+        border-color: rgba(255, 140, 0, 0.3);
+    }
+    
+    .cf-ip-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .cf-ip-status {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    
+    .cf-ip-status.online {
+        background: #4caf50;
+        box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+    }
+    
+    .cf-ip-status.offline {
+        background: #ff4444;
+    }
+    
+    .cf-ip-address {
+        font-family: monospace;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    
+    .cf-ip-latency {
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+    
+    .cf-ip-latency.good {
+        color: #4caf50;
+    }
+    
+    .cf-ip-latency.slow {
+        color: #ffc107;
+    }
+    
+    .cf-empty {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+    
+    .health-check-btn {
+        margin-left: auto;
+        padding: 6px 12px;
+        background: transparent;
+        border: 1px solid var(--accent-orange);
+        color: var(--accent-orange);
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        transition: all 0.2s;
+    }
+    
+    .health-check-btn:hover {
+        background: rgba(255, 140, 0, 0.1);
+    }
+    
+    .config-actions {
+        display: flex;
+        gap: 12px;
+    }
+    
+    @media (max-width: 1024px) {
+        .settings-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
 <script>
     const i18n = {
         en: {
             back: "Back",
             title: "Settings",
-            tabs: { general: "General", cert: "Certificate", tun: "TUN", config: "Config" },
-            general: "General Settings",
-            port: "Listen Port",
-            host: "Server Host",
-            auth: "Auth Token",
-            save: "Save",
-            cert: "CA Certificate",
-            certStatus: "Status:",
-            certPath: "Path:",
-            export: "Export Cert",
-            regenerate: "Regenerate",
-            install: "Installation Guide",
-            guide: "To trust the CA certificate, you need to install it in your system's trust store.",
-            tun: "TUN Mode",
-            enabled: "Enable TUN",
-            name: "Device Name",
-            addr: "Address",
-            mtu: "MTU",
-            dns: "DNS Hijack",
+            sections: {
+                general: "General",
+                startup: "Startup",
+                security: "Security",
+                tun: "TUN Mode",
+                cfpool: "Cloudflare IP Pool",
+                config: "Configuration"
+            },
+            port: { title: "HTTP Port", desc: "Proxy server listen port" },
+            apiport: { title: "API Port", desc: "Web API server listen port" },
+            lang: { title: "Language", desc: "Interface language" },
+            autostart: { title: "Auto Start", desc: "Start on boot (systemd)" },
+            autoproxy: { title: "Auto Enable Proxy", desc: "Enable proxy on startup" },
+            regen: { title: "Regenerate CA", desc: "Reset certificate authority" },
+            exportcert: { title: "Export Certificate", desc: "View certificate directory" },
+            tunEnabled: { title: "Enable TUN", desc: "TUN interface status" },
+            mtu: { title: "MTU", desc: "Maximum transmission unit" },
+            dnsHijack: "DNS Hijack",
+            autoRoute: "Auto Route",
+            strictRoute: "Strict Route",
             saveTun: "Save TUN Config",
-            importExport: "Import/Export Configuration",
+            fetchCF: "Fetch IPs",
+            healthCheck: "Health Check",
             exportConfig: "Export Config",
             importConfig: "Import Config",
+            apply: "Apply",
+            regenerate: "Regenerate",
+            view: "View",
+            certStatus: "Not Installed",
+            certInstalled: "Installed",
+            noCerts: "No certificates installed",
+            delete: "Delete",
+            ipPool: "IP Pool",
+            noIPs: "No IPs fetched",
             saved: "Settings saved",
-            certExported: "Certificate exported",
             certRegenerated: "Certificate regenerated",
             configExported: "Configuration exported",
             configImported: "Configuration imported successfully"
@@ -165,55 +614,313 @@ sudo update-ca-certificates
         zh: {
             back: "返回",
             title: "设置",
-            tabs: { general: "常规", cert: "证书", tun: "TUN", config: "配置" },
-            general: "常规设置",
-            port: "监听端口",
-            host: "服务器地址",
-            auth: "认证令牌",
-            save: "保存",
-            cert: "CA证书",
-            certStatus: "状态：",
-            certPath: "路径：",
-            export: "导出证书",
-            regenerate: "重新生成",
-            install: "安装指南",
-            guide: "要信任CA证书，您需要将其安装到系统的信任存储中。",
-            tun: "TUN模式",
-            enabled: "启用TUN",
-            name: "设备名称",
-            addr: "地址",
-            mtu: "MTU",
-            dns: "DNS劫持",
+            sections: {
+                general: "常规",
+                startup: "启动",
+                security: "安全",
+                tun: "TUN模式",
+                cfpool: "Cloudflare IP池",
+                config: "配置"
+            },
+            port: { title: "HTTP端口", desc: "代理服务器监听端口" },
+            apiport: { title: "API端口", desc: "Web API服务器监听端口" },
+            lang: { title: "语言", desc: "界面语言" },
+            autostart: { title: "开机自启", desc: "开机自动启动(systemd)" },
+            autoproxy: { title: "自动启用代理", desc: "启动时自动启用代理" },
+            regen: { title: "重新生成CA", desc: "重置证书颁发机构" },
+            exportcert: { title: "导出证书", desc: "查看证书目录" },
+            tunEnabled: { title: "启用TUN", desc: "TUN接口状态" },
+            mtu: { title: "MTU", desc: "最大传输单元" },
+            dnsHijack: "DNS劫持",
+            autoRoute: "自动路由",
+            strictRoute: "严格路由",
             saveTun: "保存TUN配置",
-            importExport: "导入/导出配置",
+            fetchCF: "获取IP",
+            healthCheck: "健康检查",
             exportConfig: "导出配置",
             importConfig: "导入配置",
+            apply: "应用",
+            regenerate: "重新生成",
+            view: "查看",
+            certStatus: "未安装",
+            certInstalled: "已安装",
+            noCerts: "没有已安装的证书",
+            delete: "删除",
+            ipPool: "IP池",
+            noIPs: "没有获取到IP",
             saved: "设置已保存",
-            certExported: "证书已导出",
             certRegenerated: "证书已重新生成",
             configExported: "配置已导出",
             configImported: "配置导入成功"
         }
     };
 
-    function showTab(tabName) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-        document.getElementById('tab-' + tabName).classList.add('active');
-        document.getElementById('tab-' + tabName).classList.add('active');
+    let settings = {
+        port: 8080,
+        apiPort: 5173,
+        autoStart: false,
+        autoProxy: false,
+        tun: {
+            enabled: false,
+            mtu: 9000,
+            dns_hijack: true,
+            auto_route: true,
+            strict_route: true
+        },
+        cfConfig: { auto_update: false, api_key: '' },
+        installedCerts: [],
+        ipStats: []
+    };
+
+    function loadSettings() {
+        fetch('/api/settings')
+            .then(res => res.json())
+            .then(data => {
+                settings.port = data.port || 8080;
+                settings.apiPort = data.api_port || 5173;
+                settings.autoStart = data.auto_start || false;
+                settings.autoProxy = data.auto_proxy || false;
+                settings.tun = data.tun || settings.tun;
+                settings.cfConfig = data.cf_config || settings.cfConfig;
+                settings.installedCerts = data.installed_certs || [];
+                settings.ipStats = data.ip_stats || [];
+                updateUI();
+            })
+            .catch(err => console.error('Failed to load settings:', err));
     }
 
-    function exportCert() {
-        window.open('/cert?action=export', '_blank');
+    function updateUI() {
+        const t = i18n[currentLang];
+        document.getElementById('back-text').textContent = t.back;
+        document.getElementById('page-title').textContent = t.title;
+        document.getElementById('section-general').textContent = t.sections.general;
+        document.getElementById('section-startup').textContent = t.sections.startup;
+        document.getElementById('section-security').textContent = t.sections.security;
+        document.getElementById('section-tun').textContent = t.sections.tun;
+        document.getElementById('section-cfpool').textContent = t.sections.cfpool;
+        document.getElementById('section-config').textContent = t.sections.config;
+        document.getElementById('setting-port-title').textContent = t.port.title;
+        document.getElementById('setting-port-desc').textContent = t.port.desc;
+        document.getElementById('setting-apiport-title').textContent = t.apiport.title;
+        document.getElementById('setting-apiport-desc').textContent = t.apiport.desc;
+        document.getElementById('setting-lang-title').textContent = t.lang.title;
+        document.getElementById('setting-lang-desc').textContent = t.lang.desc;
+        document.getElementById('setting-autostart-title').textContent = t.autostart.title;
+        document.getElementById('setting-autostart-desc').textContent = t.autostart.desc;
+        document.getElementById('setting-autoproxy-title').textContent = t.autoproxy.title;
+        document.getElementById('setting-autoproxy-desc').textContent = t.autoproxy.desc;
+        document.getElementById('setting-regen-title').textContent = t.regen.title;
+        document.getElementById('setting-regen-desc').textContent = t.regen.desc;
+        document.getElementById('setting-exportcert-title').textContent = t.exportcert.title;
+        document.getElementById('setting-exportcert-desc').textContent = t.exportcert.desc;
+        document.getElementById('setting-tun-enabled-title').textContent = t.tunEnabled.title;
+        document.getElementById('setting-tun-enabled-desc').textContent = t.tunEnabled.desc;
+        document.getElementById('setting-mtu-title').textContent = t.mtu.title;
+        document.getElementById('setting-mtu-desc').textContent = t.mtu.desc;
+        document.getElementById('setting-dnshijack-title').textContent = t.dnsHijack;
+        document.getElementById('setting-autoroute-title').textContent = t.autoRoute;
+        document.getElementById('setting-strict-title').textContent = t.strictRoute;
+        document.getElementById('btn-save-tun').textContent = t.saveTun;
+        document.getElementById('fetch-cf-text').textContent = t.fetchCF;
+        document.getElementById('btn-health-cf').textContent = t.healthCheck;
+        document.getElementById('export-config-text').textContent = t.exportConfig;
+        document.getElementById('import-config-text').textContent = t.importConfig;
+        document.getElementById('btn-apply-port').textContent = t.apply;
+        document.getElementById('btn-apply-apiport').textContent = t.apply;
+        document.getElementById('btn-regen-cert').textContent = t.regenerate;
+        document.getElementById('btn-open-cert').textContent = t.view;
+        document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
+        document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
+        document.getElementById('listen-port').value = settings.port;
+        document.getElementById('api-port').value = settings.apiPort;
+        document.getElementById('toggle-autostart').className = 'toggle-btn' + (settings.autoStart ? ' active' : '');
+        document.getElementById('toggle-autoproxy').className = 'toggle-btn' + (settings.autoProxy ? ' active' : '');
+        document.getElementById('toggle-tun').className = 'toggle-btn' + (settings.tun.enabled ? ' active' : '');
+        document.getElementById('tun-mtu').value = settings.tun.mtu;
+        document.getElementById('toggle-dns').className = 'toggle-btn' + (settings.tun.dns_hijack ? ' active' : '');
+        document.getElementById('toggle-autoroute').className = 'toggle-btn' + (settings.tun.auto_route ? ' active' : '');
+        document.getElementById('toggle-strict').className = 'toggle-btn' + (settings.tun.strict_route ? ' active' : '');
+        updateCertList();
+        updateCFPool();
+    }
+
+    function updateCertList() {
+        const t = i18n[currentLang];
+        const certList = document.getElementById('cert-list');
+        const certText = document.getElementById('cert-status-text');
+        if (settings.installedCerts.length === 0) {
+            certText.textContent = t.certStatus;
+            certList.innerHTML = '<div class="cert-empty">' + t.noCerts + '</div>';
+        } else {
+            certText.textContent = settings.installedCerts.length + ' ' + t.certInstalled;
+            certList.innerHTML = settings.installedCerts.map(cert => `
+                <div class="cert-item">
+                    <div class="cert-item-info">
+                        <div class="cert-item-subject">${cert.subject || 'Unknown'}</div>
+                        <div class="cert-item-thumbprint">${cert.thumbprint || ''}</div>
+                    </div>
+                    <button class="cert-item-delete" onclick="deleteCert('${cert.token}')">${t.delete}</button>
+                </div>
+            `).join('');
+        }
+    }
+
+    function updateCFPool() {
+        const t = i18n[currentLang];
+        const grid = document.getElementById('cf-ip-grid');
+        document.getElementById('cf-pool-count').textContent = t.ipPool + ' (' + settings.ipStats.length + ')';
+        if (settings.ipStats.length === 0) {
+            grid.innerHTML = '<div class="cf-empty">' + t.noIPs + '</div>';
+        } else {
+            grid.innerHTML = settings.ipStats.map(ip => {
+                const latency = parseLatency(ip.latency);
+                const isOnline = latency > 0;
+                const isGood = latency > 0 && latency < 200;
+                return `
+                    <div class="cf-ip-item">
+                        <div class="cf-ip-info">
+                            <div class="cf-ip-status ${isOnline ? 'online' : 'offline'}"></div>
+                            <span class="cf-ip-address">${ip.ip}</span>
+                        </div>
+                        <span class="cf-ip-latency ${isGood ? 'good' : 'slow'}">${latency > 0 ? Math.round(latency) + 'ms' : '---'}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    function parseLatency(latency) {
+        if (typeof latency === 'number') return latency;
+        if (typeof latency !== 'string') return 0;
+        const match = latency.match(/^(\d+(?:\.\d+)?)\s*(ns|us|µs|ms|s)?$/i);
+        if (!match) return 0;
+        const value = parseFloat(match[1]);
+        const unit = (match[2] || 'ms').toLowerCase();
+        if (unit === 's') return value * 1000;
+        if (unit === 'us' || unit === 'µs') return value / 1000;
+        if (unit === 'ns') return value / 1000000;
+        return value;
+    }
+
+    function savePort() {
+        const port = parseInt(document.getElementById('listen-port').value);
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ port: port })
+        })
+        .then(res => res.json())
+        .then(() => {
+            settings.port = port;
+            alert(i18n[currentLang].saved);
+        })
+        .catch(err => alert('Error: ' + err));
+    }
+
+    function saveApiPort() {
+        const apiPort = parseInt(document.getElementById('api-port').value);
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_port: apiPort })
+        })
+        .then(res => res.json())
+        .then(() => {
+            settings.apiPort = apiPort;
+            alert(i18n[currentLang].saved + ' (需要重启生效)');
+        })
+        .catch(err => alert('Error: ' + err));
+    }
+
+    function toggleAutoStart() {
+        settings.autoStart = !settings.autoStart;
+        document.getElementById('toggle-autostart').className = 'toggle-btn' + (settings.autoStart ? ' active' : '');
+        fetch('/api/autostart?action=' + (settings.autoStart ? 'enable' : 'disable'), { method: 'POST' })
+            .catch(() => {
+                settings.autoStart = !settings.autoStart;
+                updateUI();
+            });
+    }
+
+    function toggleAutoProxy() {
+        settings.autoProxy = !settings.autoProxy;
+        document.getElementById('toggle-autoproxy').className = 'toggle-btn' + (settings.autoProxy ? ' active' : '');
+        fetch('/api/autoproxy?action=' + (settings.autoProxy ? 'enable' : 'disable'), { method: 'POST' })
+            .catch(() => {
+                settings.autoProxy = !settings.autoProxy;
+                updateUI();
+            });
+    }
+
+    function toggleTUN() {
+        settings.tun.enabled = !settings.tun.enabled;
+        document.getElementById('toggle-tun').className = 'toggle-btn' + (settings.tun.enabled ? ' active' : '');
+    }
+
+    function toggleDNSHijack() {
+        settings.tun.dns_hijack = !settings.tun.dns_hijack;
+        document.getElementById('toggle-dns').className = 'toggle-btn' + (settings.tun.dns_hijack ? ' active' : '');
+    }
+
+    function toggleAutoRoute() {
+        settings.tun.auto_route = !settings.tun.auto_route;
+        document.getElementById('toggle-autoroute').className = 'toggle-btn' + (settings.tun.auto_route ? ' active' : '');
+    }
+
+    function toggleStrictRoute() {
+        settings.tun.strict_route = !settings.tun.strict_route;
+        document.getElementById('toggle-strict').className = 'toggle-btn' + (settings.tun.strict_route ? ' active' : '');
+    }
+
+    function saveTUNConfig() {
+        fetch('/api/tun', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings.tun)
+        })
+        .then(res => res.json())
+        .then(() => alert(i18n[currentLang].saved))
+        .catch(err => alert('Error: ' + err));
     }
 
     function regenerateCert() {
-        if (!confirm('Are you sure you want to regenerate the CA certificate?')) return;
+        if (!confirm('Are you sure?')) return;
         fetch('/cert?action=regenerate', { method: 'POST' })
             .then(res => res.json())
+            .then(() => {
+                alert(i18n[currentLang].certRegenerated);
+                loadSettings();
+            })
+            .catch(err => alert('Error: ' + err));
+    }
+
+    function openCertDir() {
+        fetch('/cert?action=path')
+            .then(res => res.json())
             .then(data => {
-                alert(currentLang === 'zh' ? i18n.zh.certRegenerated : i18n.en.certRegenerated);
-                loadCertStatus();
+                alert('证书目录: ' + (data.path || 'cert/'));
+            })
+            .catch(err => alert('获取证书路径失败: ' + err));
+    }
+
+    function deleteCert(token) {
+        fetch('/cert?action=delete&token=' + token, { method: 'POST' })
+            .then(res => res.json())
+            .then(() => loadSettings())
+            .catch(err => alert('Error: ' + err));
+    }
+
+    function fetchCFIPs() {
+        fetch('/cfpool?action=fetch', { method: 'POST' })
+            .then(() => loadSettings())
+            .catch(err => alert('Error: ' + err));
+    }
+
+    function healthCheckCF() {
+        fetch('/cfpool?action=healthcheck', { method: 'POST' })
+            .then(() => {
+                setTimeout(loadSettings, 1200);
+                setTimeout(loadSettings, 3000);
             })
             .catch(err => alert('Error: ' + err));
     }
@@ -225,63 +932,29 @@ sudo update-ca-certificates
     function importConfig(input) {
         const file = input.files[0];
         if (!file) return;
-
         const formData = new FormData();
         formData.append('config', file);
-
         fetch('/config/import', { method: 'POST', body: formData })
             .then(res => res.json())
-            .then(data => {
-                alert(currentLang === 'zh' ? i18n.zh.configImported : i18n.en.configImported);
+            .then(() => {
+                alert(i18n[currentLang].configImported);
+                loadSettings();
             })
             .catch(err => alert('Error: ' + err));
     }
 
-    function loadCertStatus() {
-        fetch('/cert')
-            .then(res => res.json())
-            .then(data => {
-                document.getElementById('cert-status-value').textContent = data.Installed ? 'Installed' : 'Not Installed';
-                document.getElementById('cert-path-value').textContent = data.CertPath || '-';
+    function setLanguage(lang) {
+        fetch('/lang?l=' + lang, { method: 'POST' })
+            .then(() => {
+                currentLang = lang;
+                localStorage.setItem('snishaper-lang', lang);
+                updateUI();
             })
-            .catch(err => console.error('Failed to load cert status:', err));
+            .catch(err => alert('Error: ' + err));
     }
 
-    function updateUI() {
-        const t = i18n[currentLang];
-        document.getElementById('back-text').textContent = t.back;
-        document.getElementById('page-title').textContent = t.title;
-        document.getElementById('tab-general').textContent = t.tabs.general;
-        document.getElementById('tab-cert').textContent = t.tabs.cert;
-        document.getElementById('tab-tun').textContent = t.tabs.tun;
-        document.getElementById('tab-config').textContent = t.tabs.config;
-        document.getElementById('general-title').textContent = t.general;
-        document.getElementById('label-port').textContent = t.port;
-        document.getElementById('label-host').textContent = t.host;
-        document.getElementById('label-auth').textContent = t.auth;
-        document.getElementById('save-text').textContent = t.save;
-        document.getElementById('cert-title').textContent = t.cert;
-        document.getElementById('cert-status-label').textContent = t.certStatus;
-        document.getElementById('cert-path-label').textContent = t.certPath;
-        document.getElementById('export-text').textContent = t.export;
-        document.getElementById('regenerate-text').textContent = t.regenerate;
-        document.getElementById('install-title').textContent = t.install;
-        document.getElementById('guide-text').textContent = t.guide;
-        document.getElementById('tun-title').textContent = t.tun;
-        document.getElementById('label-enabled').textContent = t.enabled;
-        document.getElementById('label-name').textContent = t.name;
-        document.getElementById('label-addr').textContent = t.addr;
-        document.getElementById('label-mtu').textContent = t.mtu;
-        document.getElementById('label-dns').textContent = t.dns;
-        document.getElementById('save-tun-text').textContent = t.saveTun;
-        document.getElementById('import-export-title').textContent = t.importExport;
-        document.getElementById('export-config-text').textContent = t.exportConfig;
-        document.getElementById('import-config-text').textContent = t.importConfig;
+    function initPage() {
+        loadSettings();
     }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        loadCertStatus();
-        updateUI();
-    });
 </script>
 {{end}}

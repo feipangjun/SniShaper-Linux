@@ -30,7 +30,7 @@ func NewFailoverResolver(p *ProxyServer) *FailoverResolver {
 }
 
 // getNodeClient creates a configured http.Client for the given DNSNode leveraging ProxyServer's networking.
-func (r *FailoverResolver) getNodeClient(ctx context.Context, node DNSNode) (*http.Client, error) {
+func (r *FailoverResolver) getNodeClient(_ context.Context, node DNSNode) (*http.Client, error) {
 	parsedURL, err := url.Parse(node.URL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid node URL: %w", err)

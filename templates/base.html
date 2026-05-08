@@ -5,476 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}} - SniShaper</title>
-    <script src="https://code.iconify.design/3/3.1.0/iconify.min.js"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap');
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        :root {
-            --bg-dark: #0a0a0f;
-            --bg-card: linear-gradient(145deg, #15151a, #0f0f14);
-            --bg-elevated: linear-gradient(145deg, #1f1f28, #181820);
-            --text-primary: #f0f0f5;
-            --text-secondary: #888899;
-            --accent-orange: #ff8c00;
-            --accent-yellow: #ffc107;
-            --accent-warm: linear-gradient(135deg, #ff8c00, #ffc107);
-            --border: rgba(255, 140, 0, 0.2);
-            --glow: rgba(255, 140, 0, 0.3);
-        }
-        
-        body {
-            font-family: 'Rajdhani', sans-serif;
-            background: linear-gradient(135deg, #0a0a0f 0%, #151520 50%, #0f0f18 100%);
-            color: var(--text-primary);
-            min-height: 100vh;
-            overflow-x: hidden;
-        }
-        
-        /* Animated gradient background */
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: 
-                radial-gradient(ellipse at 20% 80%, rgba(255, 140, 0, 0.08) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 20%, rgba(255, 193, 7, 0.06) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 50%, rgba(255, 140, 0, 0.03) 0%, transparent 70%);
-            animation: gradientPulse 8s ease-in-out infinite;
-            pointer-events: none;
-            z-index: 0;
-        }
-        
-        @keyframes gradientPulse {
-            0%, 100% { opacity: 0.8; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.02); }
-        }
-        
-        /* Noise texture overlay */
-        body::after {
-            content: '';
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-            opacity: 0.02;
-            pointer-events: none;
-            z-index: 1000;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 40px;
-            position: relative;
-            z-index: 2;
-        }
-        
-        /* Language switcher */
-        .lang-switcher {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            display: flex;
-            gap: 8px;
-            z-index: 100;
-            background: rgba(10, 10, 15, 0.8);
-            padding: 8px;
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--border);
-        }
-        
-        .lang-btn {
-            padding: 8px 16px;
-            border-radius: 16px;
-            border: none;
-            background: transparent;
-            color: var(--text-secondary);
-            cursor: pointer;
-            font-family: 'Orbitron', monospace;
-            font-size: 0.75rem;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .lang-btn:hover, .lang-btn.active {
-            background: var(--accent-warm);
-            color: #0a0a0f;
-            box-shadow: 0 4px 20px rgba(255, 140, 0, 0.4);
-        }
-        
-        /* Back link */
-        .back-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--text-secondary);
-            text-decoration: none;
-            margin-bottom: 30px;
-            font-family: 'Orbitron', monospace;
-            font-size: 0.85rem;
-            transition: all 0.3s;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            padding: 10px 20px;
-            border-radius: 25px;
-            background: rgba(255, 140, 0, 0.05);
-            border: 1px solid var(--border);
-        }
-        
-        .back-link:hover {
-            color: var(--accent-orange);
-            border-color: var(--accent-orange);
-            box-shadow: 0 0 20px var(--glow);
-            background: rgba(255, 140, 0, 0.1);
-        }
-        
-        /* Page title */
-        h1 {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 2.5rem;
-            font-weight: 700;
-            letter-spacing: 0.15em;
-            margin-bottom: 40px;
-            text-transform: uppercase;
-            background: var(--accent-warm);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            text-shadow: 0 0 40px rgba(255, 140, 0, 0.3);
-        }
-        
-        /* Sci-fi buttons */
-        .btn-sci {
-            padding: 14px 28px;
-            border: none;
-            background: var(--accent-warm);
-            color: #0a0a0f;
-            font-family: 'Orbitron', monospace;
-            font-size: 0.85rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            border-radius: 25px;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            box-shadow: 0 4px 15px rgba(255, 140, 0, 0.3);
-        }
-        
-        .btn-sci:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 30px rgba(255, 140, 0, 0.5);
-        }
-        
-        .btn-sci.secondary {
-            background: transparent;
-            color: var(--accent-orange);
-            border: 2px solid var(--accent-orange);
-            box-shadow: 0 4px 15px rgba(255, 140, 0, 0.1);
-        }
-        
-        .btn-sci.secondary:hover {
-            background: rgba(255, 140, 0, 0.1);
-            box-shadow: 0 8px 30px rgba(255, 140, 0, 0.3);
-        }
-        
-        .btn-sci.danger {
-            background: linear-gradient(135deg, #ff4444, #ff6666);
-            box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
-        }
-        
-        .btn-sci.danger:hover {
-            box-shadow: 0 8px 30px rgba(255, 68, 68, 0.5);
-        }
-        
-        /* Form styles */
-        .form-group {
-            margin-bottom: 24px;
-        }
-        
-        .form-label {
-            display: block;
-            font-family: 'Orbitron', monospace;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            margin-bottom: 10px;
-        }
-        
-        .form-input, .form-select, .form-textarea {
-            width: 100%;
-            padding: 14px 20px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 2px solid var(--border);
-            border-radius: 16px;
-            color: var(--text-primary);
-            font-family: 'Rajdhani', sans-serif;
-            font-size: 1rem;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .form-input:focus, .form-select:focus, .form-textarea:focus {
-            outline: none;
-            border-color: var(--accent-orange);
-            box-shadow: 0 0 20px var(--glow);
-            background: rgba(255, 140, 0, 0.05);
-        }
-        
-        .form-textarea {
-            min-height: 120px;
-            resize: vertical;
-            border-radius: 20px;
-        }
-        
-        .form-select {
-            cursor: pointer;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ff8c00' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 15px center;
-            padding-right: 50px;
-        }
-        
-        .form-checkbox {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            cursor: pointer;
-            padding: 10px;
-            border-radius: 12px;
-            transition: all 0.3s;
-        }
-        
-        .form-checkbox:hover {
-            background: rgba(255, 140, 0, 0.05);
-        }
-        
-        .form-checkbox input {
-            width: 22px;
-            height: 22px;
-            accent-color: var(--accent-orange);
-            cursor: pointer;
-        }
-        
-        /* Card styles */
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 30px;
-            margin-bottom: 24px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, rgba(255, 140, 0, 0.3), transparent);
-        }
-        
-        .card:hover {
-            border-color: rgba(255, 140, 0, 0.4);
-            box-shadow: 0 10px 40px rgba(255, 140, 0, 0.15);
-            transform: translateY(-2px);
-        }
-        
-        .card-title {
-            font-family: 'Orbitron', monospace;
-            font-size: 0.85rem;
-            color: var(--accent-orange);
-            text-transform: uppercase;
-            letter-spacing: 0.15em;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        /* Section divider */
-        .section-divider {
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--accent-orange), var(--accent-yellow), transparent);
-            margin: 40px 0;
-            opacity: 0.4;
-            border-radius: 1px;
-        }
-        
-        /* Grid layout */
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 24px;
-        }
-        
-        @media (max-width: 768px) {
-            h1 { font-size: 1.8rem; }
-            .container { padding: 20px; }
-            .form-grid { grid-template-columns: 1fr; }
-        }
-        
-        /* Toolbar */
-        .toolbar {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 30px;
-            flex-wrap: wrap;
-        }
-        
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-secondary);
-        }
-        
-        .empty-state .iconify {
-            font-size: 3.5rem;
-            margin-bottom: 20px;
-            color: var(--accent-orange);
-            opacity: 0.4;
-        }
-        
-        /* List styles */
-        .item-list {
-            display: grid;
-            gap: 16px;
-        }
-        
-        .item-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .item-card:hover {
-            border-color: rgba(255, 140, 0, 0.4);
-            box-shadow: 0 8px 30px rgba(255, 140, 0, 0.1);
-            transform: translateX(5px);
-        }
-        
-        .item-name {
-            font-family: 'Orbitron', sans-serif;
-            color: var(--accent-orange);
-            font-size: 1.1rem;
-        }
-        
-        .item-actions {
-            display: flex;
-            gap: 10px;
-        }
-        
-        .btn-icon {
-            width: 40px;
-            height: 40px;
-            border: 2px solid var(--border);
-            background: transparent;
-            color: var(--text-secondary);
-            cursor: pointer;
-            transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 12px;
-        }
-        
-        .btn-icon:hover {
-            border-color: var(--accent-orange);
-            color: var(--accent-orange);
-            background: rgba(255, 140, 0, 0.1);
-            transform: scale(1.1);
-        }
-        
-        .btn-icon.delete:hover {
-            border-color: #ff4444;
-            color: #ff4444;
-            background: rgba(255, 68, 68, 0.1);
-        }
-        
-        /* Status indicators */
-        .status-badge {
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-family: 'Orbitron', monospace;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        
-        .status-enabled {
-            background: linear-gradient(135deg, rgba(255, 140, 0, 0.2), rgba(255, 193, 7, 0.2));
-            color: var(--accent-yellow);
-            border: 1px solid rgba(255, 193, 7, 0.4);
-        }
-        
-        .status-disabled {
-            background: linear-gradient(135deg, rgba(100, 100, 110, 0.2), rgba(80, 80, 90, 0.2));
-            color: var(--text-secondary);
-            border: 1px solid rgba(100, 100, 110, 0.4);
-        }
-        
-        /* Navigation items */
-        .nav-item {
-            background: var(--bg-card);
-            padding: 35px 30px;
-            text-decoration: none;
-            color: var(--text-primary);
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-            border-radius: 20px;
-            border: 1px solid transparent;
-        }
-        
-        .nav-item::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 3px;
-            background: var(--accent-warm);
-            transform: scaleX(0);
-            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .nav-item:hover {
-            background: var(--bg-elevated);
-            border-color: var(--border);
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(255, 140, 0, 0.15);
-        }
-        
-        .nav-item:hover::before {
-            transform: scaleX(1);
-        }
-        
-        .nav-item .iconify {
-            font-size: 2.2rem;
-            color: var(--accent-orange);
-            margin-bottom: 15px;
-            display: block;
-            transition: all 0.3s;
-        }
-        
-        .nav-item:hover .iconify {
-            transform: scale(1.1);
-            filter: drop-shadow(0 0 10px rgba(255, 140, 0, 0.5));
-        }
-    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    <script src="https://code.iconify.design/3/3.1.0/iconify.min.js" defer></script>
 </head>
 <body>
     <div class="lang-switcher">
@@ -482,17 +17,89 @@
         <button class="lang-btn" id="btn-zh" onclick="setLang('zh')">中</button>
     </div>
     
-    <div class="container">
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <img src="/logo.png" alt="SniShaper" class="sidebar-logo-img">
+            <h2>SniShaper</h2>
+            <p id="sidebar-subtitle" data-i18n="sidebar.subtitle">Cloudflare IP Shaper</p>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/dashboard" class="sidebar-item" id="sidebar-dashboard">
+                <span class="iconify" data-icon="ph:activity-bold"></span>
+                <span data-i18n="sidebar.dashboard">控制面板</span>
+            </a>
+            <a href="/proxies" class="sidebar-item" id="sidebar-proxies">
+                <span class="iconify" data-icon="ph:globe-bold"></span>
+                <span data-i18n="sidebar.proxies">代理节点</span>
+            </a>
+            <a href="/rules" class="sidebar-item" id="sidebar-rules">
+                <span class="iconify" data-icon="ph:shield-check-bold"></span>
+                <span data-i18n="sidebar.rules">分流规则</span>
+            </a>
+            <a href="/routing" class="sidebar-item" id="sidebar-routing">
+                <span class="iconify" data-icon="ph:shuffle-bold"></span>
+                <span data-i18n="sidebar.routing">自动分流</span>
+            </a>
+            <a href="/dns" class="sidebar-item" id="sidebar-dns">
+                <span class="iconify" data-icon="ph:antenna-bold"></span>
+                <span data-i18n="sidebar.dns">DNS 设置</span>
+            </a>
+            <a href="/logs" class="sidebar-item" id="sidebar-logs">
+                <span class="iconify" data-icon="ph:file-text-bold"></span>
+                <span data-i18n="sidebar.logs">系统日志</span>
+            </a>
+            <a href="/settings" class="sidebar-item" id="sidebar-settings">
+                <span class="iconify" data-icon="ph:gear-bold"></span>
+                <span data-i18n="sidebar.settings">设置</span>
+            </a>
+        </nav>
+    </aside>
+    
+    <div class="main-content">
         {{template "content" .}}
     </div>
     
     <script>
         let currentLang = 'en';
         
+        const sidebarI18n = {
+            en: {
+                'sidebar.subtitle': 'Cloudflare IP Shaper',
+                'sidebar.dashboard': 'Dashboard',
+                'sidebar.proxies': 'Proxies',
+                'sidebar.rules': 'Rules',
+                'sidebar.routing': 'Routing',
+                'sidebar.dns': 'DNS',
+                'sidebar.logs': 'Logs',
+                'sidebar.settings': 'Settings'
+            },
+            zh: {
+                'sidebar.subtitle': 'Cloudflare IP 整形器',
+                'sidebar.dashboard': '控制面板',
+                'sidebar.proxies': '代理节点',
+                'sidebar.rules': '分流规则',
+                'sidebar.routing': '自动分流',
+                'sidebar.dns': 'DNS 设置',
+                'sidebar.logs': '系统日志',
+                'sidebar.settings': '设置'
+            }
+        };
+        
+        function updateSidebarLang() {
+            const translations = sidebarI18n[currentLang] || sidebarI18n.en;
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[key]) {
+                    el.textContent = translations[key];
+                }
+            });
+        }
+        
         function setLang(lang) {
             fetch('/lang?l=' + lang, {method: 'POST'}).then(() => {
                 currentLang = lang;
                 localStorage.setItem('snishaper-lang', lang);
+                updateSidebarLang();
                 if (typeof updateUI === 'function') updateUI();
             });
         }
@@ -502,19 +109,35 @@
             if (savedLang) {
                 currentLang = savedLang;
                 fetch('/lang?l=' + savedLang, {method: 'POST'}).then(() => {
+                    updateSidebarLang();
                     if (typeof updateUI === 'function') updateUI();
                     if (typeof initPage === 'function') initPage();
                 });
             } else {
                 fetch('/lang').then(r => r.text()).then(lang => {
                     currentLang = lang || 'en';
+                    updateSidebarLang();
                     if (typeof updateUI === 'function') updateUI();
                     if (typeof initPage === 'function') initPage();
                 });
             }
         }
         
-        document.addEventListener('DOMContentLoaded', initLang);
+        function highlightSidebar() {
+            const path = window.location.pathname;
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            const activeItem = document.querySelector(`.sidebar-item[href="${path}"]`);
+            if (activeItem) {
+                activeItem.classList.add('active');
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            initLang();
+            highlightSidebar();
+        });
     </script>
     {{template "scripts" .}}
 </body>

@@ -6,30 +6,115 @@
 
 <h1 id="page-title">Traffic Statistics</h1>
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-    <div class="card" style="text-align: center; padding: 50px 30px; background: linear-gradient(145deg, rgba(255, 140, 0, 0.1), rgba(255, 193, 7, 0.05)); border: 1px solid rgba(255, 140, 0, 0.2);">
-        <div style="margin-bottom: 20px;">
-            <span class="iconify" data-icon="ph:arrow-down-bold" style="font-size: 3rem; color: #ff8c00;"></span>
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon">
+            <span class="iconify" data-icon="ph:arrow-down-bold"></span>
         </div>
-        <div id="download-label" style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px;">Total Download</div>
-        <div id="download-value" style="font-family: 'Orbitron', sans-serif; font-size: 2.8rem; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">-</div>
+        <div class="stat-label" id="download-label">Total Download</div>
+        <div class="stat-value" id="download-value">-</div>
     </div>
-    <div class="card" style="text-align: center; padding: 50px 30px; background: linear-gradient(145deg, rgba(255, 140, 0, 0.1), rgba(255, 193, 7, 0.05)); border: 1px solid rgba(255, 140, 0, 0.2);">
-        <div style="margin-bottom: 20px;">
-            <span class="iconify" data-icon="ph:arrow-up-bold" style="font-size: 3rem; color: #ff8c00;"></span>
+    <div class="stat-card">
+        <div class="stat-icon">
+            <span class="iconify" data-icon="ph:arrow-up-bold"></span>
         </div>
-        <div id="upload-label" style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px;">Total Upload</div>
-        <div id="upload-value" style="font-family: 'Orbitron', sans-serif; font-size: 2.8rem; background: linear-gradient(135deg, #ff8c00, #ffc107); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">-</div>
+        <div class="stat-label" id="upload-label">Total Upload</div>
+        <div class="stat-value" id="upload-value">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">
+            <span class="iconify" data-icon="ph:download-simple-bold"></span>
+        </div>
+        <div class="stat-label" id="download-speed-label">Download Speed</div>
+        <div class="stat-value" id="download-speed">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">
+            <span class="iconify" data-icon="ph:upload-simple-bold"></span>
+        </div>
+        <div class="stat-label" id="upload-speed-label">Upload Speed</div>
+        <div class="stat-value" id="upload-speed">-</div>
     </div>
 </div>
 
-<div class="card" style="margin-top: 30px; text-align: center; padding: 60px;">
-    <span class="iconify" data-icon="ph:chart-line-up-bold" style="font-size: 3rem; color: #ff8c00; margin-bottom: 20px; opacity: 0.5;"></span>
-    <p id="chart-text" style="color: var(--text-secondary);">Real-time charts coming soon</p>
+<div class="card" style="margin-top: 30px; text-align: center; padding: 40px;">
+    <div class="refresh-status">
+        <span class="iconify" data-icon="ph:clock-bold" style="font-size: 1.5rem; color: var(--accent-orange); margin-right: 10px;"></span>
+        <span id="refresh-text" style="color: var(--text-secondary);">Last updated: --</span>
+    </div>
+    <div class="auto-refresh-toggle" style="margin-top: 15px;">
+        <button class="btn-sci secondary" onclick="toggleAutoRefresh()" id="refresh-btn">
+            <span class="iconify" data-icon="ph:pause-bold"></span>
+            <span id="refresh-btn-text">Pause Auto-Refresh</span>
+        </button>
+    </div>
 </div>
 {{end}}
 
 {{define "scripts"}}
+<style>
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+    }
+    
+    @media (max-width: 768px) {
+        .stats-grid { grid-template-columns: 1fr; }
+    }
+    
+    .stat-card {
+        text-align: center;
+        padding: 40px 30px;
+        background: linear-gradient(145deg, rgba(255, 140, 0, 0.1), rgba(255, 193, 7, 0.05));
+        border: 1px solid rgba(255, 140, 0, 0.2);
+        border-radius: 24px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .stat-card:hover {
+        border-color: rgba(255, 140, 0, 0.4);
+        box-shadow: 0 10px 40px rgba(255, 140, 0, 0.15);
+        transform: translateY(-2px);
+    }
+    
+    .stat-icon {
+        margin-bottom: 20px;
+    }
+    
+    .stat-icon .iconify {
+        font-size: 3rem;
+        color: var(--accent-orange);
+    }
+    
+    .stat-label {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 16px;
+    }
+    
+    .stat-value {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 2.5rem;
+        background: linear-gradient(135deg, #ff8c00, #ffc107);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    .refresh-status {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .auto-refresh-toggle {
+        display: flex;
+        justify-content: center;
+    }
+</style>
+
 <script>
     const i18n = {
         en: {
@@ -37,16 +122,29 @@
             title: "Traffic Statistics",
             download: "Total Download",
             upload: "Total Upload",
-            chart: "Real-time charts coming soon"
+            downloadSpeed: "Download Speed",
+            uploadSpeed: "Upload Speed",
+            lastUpdated: "Last updated",
+            pause: "Pause Auto-Refresh",
+            resume: "Resume Auto-Refresh"
         },
         zh: {
             back: "返回",
             title: "流量统计",
             download: "总下载量",
             upload: "总上传量",
-            chart: "实时图表即将推出"
+            downloadSpeed: "下载速度",
+            uploadSpeed: "上传速度",
+            lastUpdated: "最后更新",
+            pause: "暂停自动刷新",
+            resume: "恢复自动刷新"
         }
     };
+
+    let autoRefreshEnabled = true;
+    let refreshInterval = null;
+    let prevDown = 0, prevUp = 0;
+    let prevTime = Date.now();
 
     function updateUI() {
         const t = i18n[currentLang];
@@ -54,7 +152,9 @@
         document.getElementById('page-title').textContent = t.title;
         document.getElementById('download-label').textContent = t.download;
         document.getElementById('upload-label').textContent = t.upload;
-        document.getElementById('chart-text').textContent = t.chart;
+        document.getElementById('download-speed-label').textContent = t.downloadSpeed;
+        document.getElementById('upload-speed-label').textContent = t.uploadSpeed;
+        document.getElementById('refresh-btn-text').textContent = autoRefreshEnabled ? t.pause : t.resume;
         document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
         document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
     }
@@ -67,13 +167,73 @@
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 
-    function initPage() {
+    function formatSpeed(bytesPerSec) {
+        if (bytesPerSec < 1024) return Math.round(bytesPerSec) + ' B/s';
+        if (bytesPerSec < 1024 * 1024) return Math.round(bytesPerSec / 1024) + ' KB/s';
+        return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
+    }
+
+    function updateStats() {
         fetch('/stats', {headers: {'Accept': 'application/json'}})
             .then(r => r.json())
             .then(data => {
+                const now = Date.now();
+                const timeDiff = (now - prevTime) / 1000;
+                
+                const downDiff = data.download - prevDown;
+                const upDiff = data.upload - prevUp;
+                
+                const downSpeed = timeDiff > 0 ? downDiff / timeDiff : 0;
+                const upSpeed = timeDiff > 0 ? upDiff / timeDiff : 0;
+                
                 document.getElementById('download-value').textContent = formatBytes(data.download);
                 document.getElementById('upload-value').textContent = formatBytes(data.upload);
-            });
+                document.getElementById('download-speed').textContent = formatSpeed(downSpeed);
+                document.getElementById('upload-speed').textContent = formatSpeed(upSpeed);
+                
+                const t = i18n[currentLang];
+                const updateTime = new Date().toLocaleTimeString();
+                document.getElementById('refresh-text').textContent = t.lastUpdated + ': ' + updateTime;
+                
+                prevDown = data.download;
+                prevUp = data.upload;
+                prevTime = now;
+            })
+            .catch(err => console.error('Failed to load stats:', err));
+    }
+
+    function toggleAutoRefresh() {
+        autoRefreshEnabled = !autoRefreshEnabled;
+        
+        if (autoRefreshEnabled) {
+            startAutoRefresh();
+        } else {
+            stopAutoRefresh();
+        }
+        
+        updateUI();
+    }
+
+    function startAutoRefresh() {
+        stopAutoRefresh();
+        refreshInterval = setInterval(updateStats, 2000);
+    }
+
+    function stopAutoRefresh() {
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+            refreshInterval = null;
+        }
+    }
+
+    function initPage() {
+        prevDown = 0;
+        prevUp = 0;
+        prevTime = Date.now();
+        
+        updateStats();
+        startAutoRefresh();
+        updateUI();
     }
 </script>
 {{end}}

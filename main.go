@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"crypto/tls"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -14,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,11 +24,16 @@ import (
 
 	"snishaper/cert"
 	"snishaper/proxy"
+	"snishaper/sysproxy"
 )
 
 var (
 	//go:embed templates/*.html
 	templateFS embed.FS
+	//go:embed templates/*.css
+	cssFS embed.FS
+	//go:embed templates/*.png
+	assetFS embed.FS
 )
 
 var (
@@ -55,7 +63,7 @@ func initTemplates() {
 	}
 
 	// Create page-specific templates
-	pages := []string{"index", "status", "stats", "logs", "mode", "rules", "rule_edit", "cfpool", "dns", "upstreams", "routing", "settings"}
+	pages := []string{"index", "dashboard", "proxies", "status", "stats", "logs", "mode", "rules", "rule_edit", "cfpool", "dns", "upstreams", "routing", "settings"}
 
 	for _, page := range pages {
 		pageFile := fmt.Sprintf("templates/%s.html", page)
@@ -972,15 +980,32 @@ func formatBytes(n int64) string {
 }
 
 type APIServer struct {
-	app    *CLIApp
-	server *http.Server
+	app           *CLIApp
+	server        *http.Server
+	linuxFeatures *LinuxFeaturesManager
 }
 
 func NewAPIServer(addr string, app *CLIApp) *APIServer {
 	mux := http.NewServeMux()
 
 	s := &APIServer{app: app}
+
+	if runtime.GOOS == "linux" {
+		apiPort := 5173
+		if parts := strings.Split(addr, ":"); len(parts) == 2 {
+			if p, err := strconv.Atoi(parts[1]); err == nil {
+				apiPort = p
+			}
+		}
+		s.linuxFeatures = NewLinuxFeaturesManager(app, app.ruleManager, app.proxyServer, apiPort)
+		s.linuxFeatures.RegisterRoutes(mux)
+	}
+
+	mux.HandleFunc("/style.css", s.handleCSS)
+	mux.HandleFunc("/logo.png", s.handleLogo)
 	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/dashboard", s.handleDashboard)
+	mux.HandleFunc("/proxies", s.handleProxies)
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/stats", s.handleStats)
 	mux.HandleFunc("/logs", s.handleLogs)
@@ -991,6 +1016,7 @@ func NewAPIServer(addr string, app *CLIApp) *APIServer {
 	mux.HandleFunc("/rules", s.handleRules)
 	mux.HandleFunc("/rules/edit", s.handleRuleEdit)
 	mux.HandleFunc("/dns", s.handleDNS)
+	mux.HandleFunc("/dns/test", s.handleDNSTest)
 	mux.HandleFunc("/upstreams", s.handleUpstreams)
 	mux.HandleFunc("/routing", s.handleRouting)
 	mux.HandleFunc("/cert", s.handleCert)
@@ -998,6 +1024,17 @@ func NewAPIServer(addr string, app *CLIApp) *APIServer {
 	mux.HandleFunc("/config/import", s.handleImportConfig)
 	mux.HandleFunc("/cfpool", s.handleCFPool)
 	mux.HandleFunc("/settings", s.handleSettings)
+	mux.HandleFunc("/server/config", s.handleServerConfig)
+	mux.HandleFunc("/server/test", s.handleServerTest)
+	mux.HandleFunc("/ech/profiles", s.handleECHProfiles)
+	mux.HandleFunc("/proxy/start", s.handleProxyStart)
+	mux.HandleFunc("/proxy/stop", s.handleProxyStop)
+	mux.HandleFunc("/sysproxy/enable", s.handleSysProxyEnable)
+	mux.HandleFunc("/sysproxy/disable", s.handleSysProxyDisable)
+	mux.HandleFunc("/tun/start", s.handleTUNStart)
+	mux.HandleFunc("/tun/stop", s.handleTUNStop)
+	mux.HandleFunc("/tun/status", s.handleTUNStatus)
+	mux.HandleFunc("/api/doh", s.handleDoH)
 
 	s.server = &http.Server{
 		Addr:    addr,
@@ -1007,14 +1044,64 @@ func NewAPIServer(addr string, app *CLIApp) *APIServer {
 	return s
 }
 
+func (s *APIServer) handleCSS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css")
+	data, err := cssFS.ReadFile("templates/style.css")
+	if err != nil {
+		http.Error(w, "CSS not found", 404)
+		return
+	}
+	w.Write(data)
+}
+
+func (s *APIServer) handleLogo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	data, err := assetFS.ReadFile("templates/logo.png")
+	if err != nil {
+		http.Error(w, "Logo not found", 404)
+		return
+	}
+	w.Write(data)
+}
+
 func (s *APIServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
+	// 重定向到仪表盘页面
+	http.Redirect(w, r, "/dashboard", http.StatusFound)
+}
+
+func (s *APIServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Accept") == "application/json" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"running":     s.app.IsRunning(),
+			"mode":        s.app.GetMode(),
+			"listen_addr": s.app.listenAddr,
+			"version":     Version,
+		})
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := PageData{Title: "Home"}
-	if err := getPageTemplate("index").ExecuteTemplate(w, "base", data); err != nil {
+	data := PageData{Title: "Dashboard"}
+	if err := getPageTemplate("dashboard").ExecuteTemplate(w, "base", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *APIServer) handleProxies(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Accept") == "application/json" {
+		nodes := s.app.ruleManager.GetDNSNodes()
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"nodes": nodes,
+			"mode":  s.app.GetMode(),
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	data := PageData{Title: "Proxies"}
+	if err := getPageTemplate("proxies").ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -1022,10 +1109,11 @@ func (s *APIServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Accept") == "application/json" {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"running":    s.app.IsRunning(),
+			"running":    s.app.proxyServer.IsRunning(),
 			"mode":       s.app.GetMode(),
 			"listenAddr": s.app.listenAddr,
 			"version":    Version,
+			"directMode": s.app.proxyServer.IsDirectMode(),
 		})
 		return
 	}
@@ -1197,6 +1285,36 @@ func (s *APIServer) handleRuleEdit(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) handleDNS(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		if r.URL.Query().Get("test") != "" {
+			id := r.URL.Query().Get("id")
+			if id == "" {
+				http.Error(w, "Missing id", 400)
+				return
+			}
+			nodes := s.app.ruleManager.GetDNSNodes()
+			for _, node := range nodes {
+				if node.ID == id {
+					start := time.Now()
+					err := testDNSNode(node)
+					latency := time.Since(start).Milliseconds()
+					if err != nil {
+						json.NewEncoder(w).Encode(map[string]interface{}{
+							"success": false,
+							"error":   err.Error(),
+							"latency": latency,
+						})
+					} else {
+						json.NewEncoder(w).Encode(map[string]interface{}{
+							"success": true,
+							"latency": latency,
+						})
+					}
+					return
+				}
+			}
+			http.Error(w, "Node not found", 404)
+			return
+		}
 		nodes := s.app.ruleManager.GetDNSNodes()
 		if r.Header.Get("Accept") == "application/json" {
 			json.NewEncoder(w).Encode(map[string]interface{}{"nodes": nodes})
@@ -1208,6 +1326,55 @@ func (s *APIServer) handleDNS(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	case http.MethodPost:
+		if r.URL.Query().Get("test") != "" {
+			id := r.URL.Query().Get("id")
+			if id == "" {
+				http.Error(w, "Missing id", 400)
+				return
+			}
+			nodes := s.app.ruleManager.GetDNSNodes()
+			for _, node := range nodes {
+				if node.ID == id {
+					start := time.Now()
+					err := testDNSNode(node)
+					latency := time.Since(start).Milliseconds()
+					if err != nil {
+						json.NewEncoder(w).Encode(map[string]interface{}{
+							"success": false,
+							"error":   err.Error(),
+							"latency": latency,
+						})
+					} else {
+						json.NewEncoder(w).Encode(map[string]interface{}{
+							"success": true,
+							"latency": latency,
+						})
+					}
+					return
+				}
+			}
+			http.Error(w, "Node not found", 404)
+			return
+		}
+		if r.URL.Query().Get("target") != "" {
+			id := r.URL.Query().Get("id")
+			target := r.URL.Query().Get("target")
+			if id == "" || target == "" {
+				http.Error(w, "Missing id or target", 400)
+				return
+			}
+			targetIdx, err := strconv.Atoi(target)
+			if err != nil {
+				http.Error(w, "Invalid target", 400)
+				return
+			}
+			if err := s.app.ruleManager.SetDNSNodePriority(id, targetIdx); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			return
+		}
 		var node proxy.DNSNode
 		if err := json.NewDecoder(r.Body).Decode(&node); err != nil {
 			http.Error(w, err.Error(), 400)
@@ -1241,6 +1408,71 @@ func (s *APIServer) handleDNS(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}
+}
+
+func testDNSNode(node proxy.DNSNode) error {
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: node.CertVerify.AllowUnknownAuthority,
+			},
+		},
+	}
+	resp, err := client.Get(node.URL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("DNS node returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (s *APIServer) handleDNSTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "Missing id", 400)
+		return
+	}
+	nodes := s.app.ruleManager.GetDNSNodes()
+	for _, node := range nodes {
+		if node.ID == id {
+			resolver := s.app.proxyServer.GetDoHResolver()
+			if resolver == nil {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "Resolver not initialized",
+				})
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			start := time.Now()
+			ips, err := resolver.TestNode(ctx, node)
+			elapsed := time.Since(start)
+			if err != nil {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   err.Error(),
+					"latency": fmt.Sprintf("%dms", elapsed.Milliseconds()),
+				})
+			} else {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": len(ips) > 0,
+					"ips":     ips,
+					"latency": fmt.Sprintf("%dms", elapsed.Milliseconds()),
+				})
+			}
+			return
+		}
+	}
+	http.Error(w, "Node not found", 404)
 }
 
 func (s *APIServer) handleUpstreams(w http.ResponseWriter, r *http.Request) {
@@ -1293,6 +1525,37 @@ func (s *APIServer) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) handleRouting(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/routing/status" && r.Method == http.MethodGet {
+		config := s.app.ruleManager.GetAutoRoutingConfig()
+		domainCount := 0
+		router := s.app.ruleManager.GetAutoRouter()
+		if router != nil {
+			gfwList := router.GetGFWList()
+			if gfwList != nil {
+				domainCount = gfwList.Count()
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"mode":         string(config.Mode),
+			"domain_count": domainCount,
+			"last_update":  config.LastUpdate,
+		})
+		return
+	}
+
+	if r.URL.Path == "/routing/refresh" && r.Method == http.MethodPost {
+		count, err := s.app.ruleManager.RefreshGFWList()
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "ok",
+			"count":  count,
+		})
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		config := s.app.ruleManager.GetAutoRoutingConfig()
@@ -1323,6 +1586,10 @@ func (s *APIServer) handleCert(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		action := r.URL.Query().Get("action")
+		if action == "path" {
+			json.NewEncoder(w).Encode(map[string]string{"path": certDir})
+			return
+		}
 		if action == "export" {
 			pem, err := s.app.certManager.ExportCert()
 			if err != nil {
@@ -1334,8 +1601,16 @@ func (s *APIServer) handleCert(w http.ResponseWriter, r *http.Request) {
 			w.Write(pem)
 			return
 		}
-		status := s.app.certManager.GetCAInstallStatus()
-		json.NewEncoder(w).Encode(status)
+		if r.Header.Get("Accept") == "application/json" {
+			status := s.app.certManager.GetCAInstallStatus()
+			json.NewEncoder(w).Encode(status)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		data := PageData{Title: "Certificate Management"}
+		if err := getPageTemplate("cert").ExecuteTemplate(w, "base", data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	case http.MethodPost:
 		action := r.URL.Query().Get("action")
 		if action == "regenerate" {
@@ -1345,6 +1620,9 @@ func (s *APIServer) handleCert(w http.ResponseWriter, r *http.Request) {
 			}
 			s.app.proxyServer.ClearCertCache()
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		}
+		if action == "open_dir" {
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "path": certDir})
 		}
 	}
 }
@@ -1390,8 +1668,20 @@ func (s *APIServer) handleCFPool(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		config := s.app.ruleManager.GetCloudflareConfig()
 		if r.Header.Get("Accept") == "application/json" {
+			ips := s.app.proxyServer.GetCFPoolIPs()
+			ipList := make([]map[string]interface{}, 0)
+			if ips != nil {
+				for _, ip := range ips {
+					ipList = append(ipList, map[string]interface{}{
+						"address": ip.IP,
+						"latency": ip.Latency,
+						"valid":   ip.Failures < 3,
+					})
+				}
+			}
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"config": config,
+				"ips":    ipList,
 			})
 			return
 		}
@@ -1430,11 +1720,15 @@ func (s *APIServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		if r.Header.Get("Accept") == "application/json" {
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"tun":  s.app.ruleManager.GetTUNConfig(),
-				"cert": s.app.certManager.GetCAInstallStatus(),
-				"host": s.app.ruleManager.GetServerHost(),
-				"auth": s.app.ruleManager.GetServerAuth(),
-				"port": s.app.ruleManager.GetListenPort(),
+				"tun":             s.app.ruleManager.GetTUNConfig(),
+				"cert":            s.app.certManager.GetCAInstallStatus(),
+				"host":            s.app.ruleManager.GetServerHost(),
+				"auth":            s.app.ruleManager.GetServerAuth(),
+				"port":            s.app.ruleManager.GetListenPort(),
+				"auto_start":      s.app.ruleManager.GetAutoStart(),
+				"auto_proxy":      s.app.ruleManager.GetAutoProxy(),
+				"ip_stats":        s.app.proxyServer.GetCFPoolIPs(),
+				"installed_certs": s.app.certManager.GetInstalledCerts(),
 			})
 			return
 		}
@@ -1474,6 +1768,242 @@ func (s *APIServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *APIServer) handleServerConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"host": s.app.ruleManager.GetServerHost(),
+			"auth": s.app.ruleManager.GetServerAuth(),
+		})
+	case http.MethodPost:
+		var req struct {
+			Host string `json:"host"`
+			Auth string `json:"auth"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		s.app.ruleManager.UpdateServerConfig(req.Host, req.Auth)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}
+}
+
+func (s *APIServer) handleServerTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	host := s.app.ruleManager.GetServerHost()
+	auth := s.app.ruleManager.GetServerAuth()
+	if host == "" || auth == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Server host or auth not configured",
+		})
+		return
+	}
+	testURL := "https://" + host + "/" + auth + "/test"
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(testURL)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"status":  resp.StatusCode,
+	})
+}
+
+func (s *APIServer) handleECHProfiles(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		profiles := s.app.ruleManager.GetECHProfiles()
+		json.NewEncoder(w).Encode(map[string]interface{}{"profiles": profiles})
+	case http.MethodPost:
+		var profile proxy.ECHProfile
+		if err := json.NewDecoder(r.Body).Decode(&profile); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if err := s.app.ruleManager.UpsertECHProfile(profile); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id", 400)
+			return
+		}
+		if err := s.app.ruleManager.DeleteECHProfile(id); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}
+}
+
+func (s *APIServer) handleProxyStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	// 启动代理服务器
+	if err := s.app.proxyServer.Start(); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+}
+
+func (s *APIServer) handleProxyStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	log.Printf("[ProxyStop] Stopping proxy server...")
+	// 先停止系统代理（清理iptables规则）
+	if runtime.GOOS == "linux" && s.linuxFeatures != nil {
+		if err := s.linuxFeatures.DisableSysProxy(); err != nil {
+			log.Printf("[ProxyStop] Failed to disable system proxy: %v", err)
+			// 继续停止代理服务器，不返回错误
+		} else {
+			log.Printf("[ProxyStop] System proxy disabled")
+		}
+	}
+	// 停止代理服务器，关闭8080端口
+	log.Printf("[ProxyStop] Proxy running before stop: %v", s.app.proxyServer.IsRunning())
+	if err := s.app.proxyServer.Stop(); err != nil {
+		log.Printf("[ProxyStop] Failed to stop proxy: %v", err)
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	log.Printf("[ProxyStop] Proxy running after stop: %v", s.app.proxyServer.IsRunning())
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+}
+
+func (s *APIServer) handleSysProxyEnable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	if runtime.GOOS == "linux" && s.linuxFeatures != nil {
+		port := s.app.ruleManager.GetListenPort()
+		if port == "" {
+			port = "8080"
+		}
+		p, err := strconv.Atoi(port)
+		if err != nil {
+			p = 8080
+		}
+		if err := s.linuxFeatures.EnableSysProxy(p); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "enabled"})
+}
+
+func (s *APIServer) handleSysProxyDisable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	if runtime.GOOS == "linux" && s.linuxFeatures != nil {
+		if err := s.linuxFeatures.DisableSysProxy(); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "disabled"})
+}
+
+func (s *APIServer) handleTUNStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	if runtime.GOOS == "linux" && s.linuxFeatures != nil {
+		cfg := s.app.ruleManager.GetTUNConfig()
+		port := s.app.ruleManager.GetListenPort()
+		if port == "" {
+			port = "8080"
+		}
+		p, err := strconv.Atoi(port)
+		if err != nil {
+			p = 8080
+		}
+		if err := s.linuxFeatures.StartTUN(cfg, p); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+}
+
+func (s *APIServer) handleTUNStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	if runtime.GOOS == "linux" && s.linuxFeatures != nil {
+		if err := s.linuxFeatures.StopTUN(); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+}
+
+func (s *APIServer) handleTUNStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+	cfg := s.app.ruleManager.GetTUNConfig()
+	status := map[string]interface{}{
+		"running": false,
+		"config":  cfg,
+	}
+	if runtime.GOOS == "linux" && s.linuxFeatures != nil {
+		tunStatus := s.linuxFeatures.GetTUNStatus(cfg)
+		status["running"] = tunStatus.Running
+	}
+	json.NewEncoder(w).Encode(status)
+}
+
+func (s *APIServer) handleDoH(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		json.NewEncoder(w).Encode(map[string]bool{"enabled": proxy.DoHEnabled})
+	case http.MethodPost:
+		action := r.URL.Query().Get("action")
+		if action == "enable" {
+			// 检查代理是否已停止
+			if s.app.proxyServer.IsRunning() {
+				http.Error(w, "DoH can only be enabled when proxy is stopped", http.StatusBadRequest)
+				return
+			}
+			proxy.DoHEnabled = true
+			json.NewEncoder(w).Encode(map[string]string{"status": "enabled"})
+		} else if action == "disable" {
+			proxy.DoHEnabled = false
+			json.NewEncoder(w).Encode(map[string]string{"status": "disabled"})
+		} else {
+			http.Error(w, "Invalid action", http.StatusBadRequest)
+		}
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func (s *APIServer) Start() error {
 	log.Printf("[Debug] API server starting on %s", s.server.Addr)
 	err := s.server.ListenAndServe()
@@ -1493,11 +2023,126 @@ func waitForSignal(app *CLIApp) {
 	fmt.Printf("\n[Info] Received signal: %v\n", sig)
 	fmt.Println("[Info] Shutting down...")
 
+	if runtime.GOOS == "linux" {
+		sysproxy.CleanupIptablesOnExit()
+	}
+
 	if err := app.Stop(); err != nil {
 		log.Printf("[Error] Stop proxy failed: %v", err)
 	}
 
 	fmt.Println("[Info] Goodbye!")
+}
+
+func startInteractiveConsole(app *CLIApp, apiServer *APIServer, linuxFeatures *LinuxFeaturesManager) {
+	go func() {
+		reader := bufio.NewReader(os.Stdin)
+		for {
+			fmt.Print("\n> ")
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(strings.ToLower(input))
+
+			switch input {
+			case "1", "proxy":
+				if app.proxyServer.IsDirectMode() {
+					app.proxyServer.SetDirectMode(false)
+					if !app.IsRunning() {
+						app.Start()
+					}
+					fmt.Println("[Console] Proxy started")
+				} else {
+					app.proxyServer.SetDirectMode(true)
+					fmt.Println("[Console] Proxy stopped, all traffic now goes direct")
+				}
+			case "2", "sysproxy":
+				if linuxFeatures != nil {
+					status := linuxFeatures.GetSysProxyStatus()
+					if status.Enabled {
+						linuxFeatures.DisableSysProxy()
+						fmt.Println("[Console] System proxy disabled, all traffic now goes direct")
+					} else {
+						port := app.ruleManager.GetListenPort()
+						if port == "" {
+							port = "8080"
+						}
+						p, _ := strconv.Atoi(port)
+						if err := linuxFeatures.EnableSysProxy(p); err != nil {
+							fmt.Printf("[Console] Failed to enable system proxy: %v\n", err)
+						} else {
+							fmt.Println("[Console] System proxy enabled")
+						}
+					}
+				} else {
+					fmt.Println("[Console] System proxy not available on this platform")
+				}
+			case "3", "tun":
+				if linuxFeatures != nil {
+					cfg := app.ruleManager.GetTUNConfig()
+					tunStatus := linuxFeatures.GetTUNStatus(cfg)
+					if tunStatus.Running {
+						linuxFeatures.StopTUN()
+						fmt.Println("[Console] TUN stopped")
+					} else {
+						port := app.ruleManager.GetListenPort()
+						if port == "" {
+							port = "8080"
+						}
+						p, _ := strconv.Atoi(port)
+						if err := linuxFeatures.StartTUN(cfg, p); err != nil {
+							fmt.Printf("[Console] Failed to start TUN: %v\n", err)
+						} else {
+							fmt.Println("[Console] TUN started")
+						}
+					}
+				} else {
+					fmt.Println("[Console] TUN not available on this platform")
+				}
+			case "4", "status":
+				fmt.Printf("  Proxy: %v\n", app.IsRunning())
+				fmt.Printf("  Mode: %s\n", app.GetMode())
+				down, up := app.GetStats()
+				fmt.Printf("  Download: %s\n", formatBytes(down))
+				fmt.Printf("  Upload: %s\n", formatBytes(up))
+			case "5", "reload":
+				app.ReloadConfig()
+				fmt.Println("[Console] Config reloaded")
+			case "6", "mode":
+				fmt.Printf("Current mode: %s\n", app.GetMode())
+				fmt.Println("Available: mitm, transparent, tls-rf, quic")
+				fmt.Print("Enter new mode (or empty to cancel): ")
+				newMode, _ := reader.ReadString('\n')
+				newMode = strings.TrimSpace(strings.ToLower(newMode))
+				if newMode != "" {
+					app.SetMode(newMode)
+					fmt.Printf("[Console] Mode set to: %s\n", newMode)
+				}
+			case "7", "help", "?":
+				fmt.Println(`
+Console Commands:
+  1/proxy     - Toggle proxy server
+  2/sysproxy  - Toggle system proxy
+  3/tun       - Toggle TUN mode
+  4/status    - Show current status
+  5/reload    - Reload configuration
+  6/mode      - Change proxy mode
+  7/help/?    - Show this help
+  quit/exit   - Exit application`)
+			case "quit", "exit", "q":
+				fmt.Println("[Console] Shutting down...")
+				app.Stop()
+				if linuxFeatures != nil {
+					linuxFeatures.DisableSysProxy()
+					linuxFeatures.StopTUN()
+				}
+				apiServer.Stop()
+				os.Exit(0)
+			case "":
+				continue
+			default:
+				fmt.Println("[Console] Unknown command. Type 'help' for available commands.")
+			}
+		}
+	}()
 }
 
 func main() {
@@ -1552,7 +2197,7 @@ func main() {
 	}
 
 	fmt.Printf("[Info] Proxy running in %s mode\n", app.GetMode())
-	fmt.Println("[Info] Press Ctrl+C to stop")
+	fmt.Println("[Info] Interactive console: type 'help' for commands, or press Ctrl+C to stop")
 	fmt.Println()
 
 	// If auto update is enabled, fetch IPs immediately
@@ -1592,6 +2237,8 @@ func main() {
 	stats := newStatsDisplay()
 	stats.start(app)
 	defer stats.stop()
+
+	startInteractiveConsole(app, apiServer, apiServer.linuxFeatures)
 
 	waitForSignal(app)
 }
