@@ -1113,7 +1113,6 @@ func (s *APIServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 			"mode":       s.app.GetMode(),
 			"listenAddr": s.app.listenAddr,
 			"version":    Version,
-			"directMode": s.app.proxyServer.IsDirectMode(),
 		})
 		return
 	}
@@ -1878,6 +1877,12 @@ func (s *APIServer) handleProxyStop(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[ProxyStop] System proxy disabled")
 		}
 	}
+	// 停止代理服务器前关闭DoH
+	if proxy.DoHEnabled {
+		proxy.DoHEnabled = false
+		log.Printf("[ProxyStop] DoH disabled")
+	}
+
 	// 停止代理服务器，关闭8080端口
 	log.Printf("[ProxyStop] Proxy running before stop: %v", s.app.proxyServer.IsRunning())
 	if err := s.app.proxyServer.Stop(); err != nil {
@@ -1986,9 +1991,9 @@ func (s *APIServer) handleDoH(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		action := r.URL.Query().Get("action")
 		if action == "enable" {
-			// 检查代理是否已停止
-			if s.app.proxyServer.IsRunning() {
-				http.Error(w, "DoH can only be enabled when proxy is stopped", http.StatusBadRequest)
+			// 开启DoH必须先开启代理，否则系统代理设置会导致访问错误
+			if !s.app.proxyServer.IsRunning() {
+				http.Error(w, "DoH can only be enabled when proxy is running", http.StatusBadRequest)
 				return
 			}
 			proxy.DoHEnabled = true
@@ -2044,15 +2049,12 @@ func startInteractiveConsole(app *CLIApp, apiServer *APIServer, linuxFeatures *L
 
 			switch input {
 			case "1", "proxy":
-				if app.proxyServer.IsDirectMode() {
-					app.proxyServer.SetDirectMode(false)
-					if !app.IsRunning() {
-						app.Start()
-					}
-					fmt.Println("[Console] Proxy started")
+				if app.IsRunning() {
+					app.Stop()
+					fmt.Println("[Console] Proxy stopped")
 				} else {
-					app.proxyServer.SetDirectMode(true)
-					fmt.Println("[Console] Proxy stopped, all traffic now goes direct")
+					app.Start()
+					fmt.Println("[Console] Proxy started")
 				}
 			case "2", "sysproxy":
 				if linuxFeatures != nil {

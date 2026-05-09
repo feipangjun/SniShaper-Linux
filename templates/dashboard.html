@@ -146,7 +146,7 @@
             off: "Off",
             dohOn: "DoH: On",
             dohOff: "DoH: Off",
-            dohDesc: "DoH (Proxy stopped only)"
+            dohDesc: "DoH (Proxy running only)"
         },
         zh: {
             back: "返回",
@@ -177,7 +177,7 @@
             off: "关",
             dohOn: "DoH: 开",
             dohOff: "DoH: 关",
-            dohDesc: "DoH（仅代理关闭时可用）"
+            dohDesc: "DoH（仅代理运行时可用）"
         }
     };
 
@@ -221,9 +221,9 @@
         document.getElementById('icon-tun').setAttribute('data-icon', tunRunning ? 'ph:network-slash-bold' : 'ph:network-bold');
         document.getElementById('icon-doh').setAttribute('data-icon', dohEnabled ? 'ph:globe-hemisphere-east-bold' : 'ph:globe-hemisphere-west-bold');
 
-        // Update DoH button state - only enabled when proxy is stopped
+        // Update DoH button state - only enabled when proxy is running
         const dohBtn = document.getElementById('btn-doh');
-        if (proxyRunning) {
+        if (!proxyRunning) {
             dohBtn.disabled = true;
             document.getElementById('btn-doh-text').textContent = t.dohDesc;
         } else {
@@ -241,7 +241,7 @@
                 fetch('/api/doh', {headers: {'Accept': 'application/json'}}).then(r => r.json()).catch(() => ({enabled: false}))
             ]);
 
-            proxyRunning = !statusRes.directMode;
+            proxyRunning = statusRes.running || false;
             sysProxyEnabled = statusRes.systemProxy || false;
             tunRunning = tunRes.running || false;
             dohEnabled = dohRes.enabled || false;
@@ -323,8 +323,8 @@
 
     async function toggleDoH() {
         if (isOperating) return;
-        if (proxyRunning) {
-            alert('DoH can only be enabled when proxy is stopped');
+        if (!proxyRunning) {
+            alert('DoH can only be enabled when proxy is running');
             return;
         }
         isOperating = true;

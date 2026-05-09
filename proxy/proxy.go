@@ -71,7 +71,6 @@ type ProxyServer struct {
 	bytesDown     int64
 	bytesUp       int64
 	certBypassMap sync.Map
-	directMode    bool // true = all traffic goes direct, bypassing proxy rules
 }
 
 type RuleManager struct {
@@ -1081,18 +1080,6 @@ func (p *ProxyServer) GetMode() string {
 	return p.mode
 }
 
-func (p *ProxyServer) SetDirectMode(direct bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.directMode = direct
-}
-
-func (p *ProxyServer) IsDirectMode() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.directMode
-}
-
 func (p *ProxyServer) Start() error {
 	p.mu.Lock()
 	if p.running {
@@ -1184,12 +1171,6 @@ func (p *ProxyServer) IsRunning() bool {
 }
 
 func (p *ProxyServer) handleRequest(w http.ResponseWriter, req *http.Request) {
-
-	if p.IsDirectMode() {
-		p.directConnect(w, req)
-		return
-	}
-
 	host := req.Host
 	if host == "" {
 		host = req.URL.Host
