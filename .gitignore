@@ -41,3 +41,5 @@ Thumbs.db
 /Windows/
 # build
 /dist/
+/dist/snishaper
+/dist/*

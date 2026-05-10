@@ -112,6 +112,20 @@
         </div>
     </div>
 </div>
+
+<div class="card" style="margin-top: 16px;">
+    <div class="card-title">
+        <span class="iconify" data-icon="ph:globe-hemisphere-west-bold"></span>
+        <span id="section-doh-test">DoH Server Test</span>
+    </div>
+    <div style="display: grid; gap: 12px;">
+        <button class="btn-sci secondary" onclick="testAllDoHServers()" id="btn-doh-test-all" style="width: 100%;">
+            <span class="iconify" data-icon="ph:play-circle-bold"></span>
+            <span id="btn-doh-test-text">Test All DoH Servers</span>
+        </button>
+        <div id="doh-test-results" style="display: grid; gap: 8px; max-height: 300px; overflow-y: auto;"></div>
+    </div>
+</div>
 {{end}}
 
 {{define "scripts"}}
@@ -146,7 +160,13 @@
             off: "Off",
             dohOn: "DoH: On",
             dohOff: "DoH: Off",
-            dohDesc: "DoH (Proxy running only)"
+            dohDesc: "DoH (Proxy running only)",
+            dohTest: "DoH Server Test",
+            testAll: "Test All DoH Servers",
+            testing: "Testing...",
+            success: "Success",
+            failed: "Failed",
+            latency: "Latency"
         },
         zh: {
             back: "返回",
@@ -177,7 +197,13 @@
             off: "关",
             dohOn: "DoH: 开",
             dohOff: "DoH: 关",
-            dohDesc: "DoH（仅代理运行时可用）"
+            dohDesc: "DoH（仅代理运行时可用）",
+            dohTest: "DoH 服务器测试",
+            testAll: "测试所有 DoH 服务器",
+            testing: "测试中...",
+            success: "成功",
+            failed: "失败",
+            latency: "延迟"
         }
     };
 
@@ -212,6 +238,8 @@
         document.getElementById('section-conn').textContent = t.connInfo;
         document.getElementById('label-view').textContent = t.view;
         document.getElementById('label-ready').textContent = t.ready;
+        document.getElementById('section-doh-test').textContent = t.dohTest;
+        document.getElementById('btn-doh-test-text').textContent = t.testAll;
         document.getElementById('btn-en').className = 'lang-btn' + (currentLang === 'en' ? ' active' : '');
         document.getElementById('btn-zh').className = 'lang-btn' + (currentLang === 'zh' ? ' active' : '');
 
@@ -342,6 +370,71 @@
 
     function viewCert() {
         window.open('/cert', '_blank');
+    }
+
+    const dohServerList = [
+        {name: 'Cloudflare Gateway', url: 'https://xwfpeb16ii.cloudflare-gateway.com/dns-query', ech: true},
+        {name: 'Cloudflare DNS', url: 'https://cloudflare-dns.com/dns-query', ech: true},
+        {name: 'NextDNS (Fronted)', url: 'https://dns.nextdns.io/d1e7af', sni: 'nextdns.io', ips: ['103.170.232.254']},
+        {name: 'CleanBrowsing (Fronted)', url: 'https://doh.cleanbrowsing.org/doh/security-filter/', sni: 'cleanbrowsing.org', ips: ['185.228.168.168']},
+        {name: 'v.recipes (Direct)', url: 'https://v.recipes/dns-cn', ips: ['104.19.148.96']}
+    ];
+
+    async function testAllDoHServers() {
+        const t = i18n[currentLang];
+        const btn = document.getElementById('btn-doh-test-all');
+        const resultsDiv = document.getElementById('doh-test-results');
+        
+        btn.disabled = true;
+        btn.querySelector('span:last-child').textContent = t.testing;
+        resultsDiv.innerHTML = '';
+
+        const resultElements = dohServerList.map(server => {
+            const resultDiv = document.createElement('div');
+            resultDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem;';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.style.cssText = 'color: var(--text-secondary);';
+            nameSpan.textContent = server.name;
+            
+            const statusSpan = document.createElement('span');
+            statusSpan.className = 'status-badge status-disabled';
+            statusSpan.textContent = t.testing + '...';
+            
+            resultDiv.appendChild(nameSpan);
+            resultDiv.appendChild(statusSpan);
+            resultsDiv.appendChild(resultDiv);
+
+            return {server, statusSpan};
+        });
+
+        await Promise.all(resultElements.map(({server, statusSpan}) => (async () => {
+            try {
+                const start = Date.now();
+                let testUrl = '/api/doh/test?url=' + encodeURIComponent(server.url);
+                if (server.id) testUrl += '&serverId=' + encodeURIComponent(server.id);
+                if (server.sni) testUrl += '&sni=' + encodeURIComponent(server.sni);
+                if (server.ech) testUrl += '&ech=1';
+                if (server.ips && server.ips.length > 0) testUrl += '&ips=' + encodeURIComponent(server.ips.join(','));
+                const res = await fetch(testUrl, {method: 'POST'});
+                const data = await res.json();
+                const latency = Date.now() - start;
+
+                if (data.success) {
+                    statusSpan.className = 'status-badge status-enabled';
+                    statusSpan.textContent = t.success + ' (' + latency + 'ms)';
+                } else {
+                    statusSpan.className = 'status-badge status-disabled';
+                    statusSpan.textContent = t.failed + ': ' + (data.error || '');
+                }
+            } catch (e) {
+                statusSpan.className = 'status-badge status-disabled';
+                statusSpan.textContent = t.failed + ': network error';
+            }
+        })()));
+
+        btn.disabled = false;
+        btn.querySelector('span:last-child').textContent = t.testAll;
     }
 
     function initPage() {

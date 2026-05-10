@@ -3023,49 +3023,55 @@
   "upstreams": [],
   "dns_nodes": [
     {
-      "id": "1776998630568972800",
-      "name": "IIJ",
-      "url": "https://public.dns.iij.jp/dns-query",
-      "sni": "iij.jp",
-      "ips": [
-        "103.2.57.5"
-      ],
-      "ech_enabled": false,
-      "ech_auto_update": false,
-      "quic": true,
-      "cert_verify": {
-        "mode": "allow_names",
-        "names": [
-          "*.dns.iij.jp"
-        ]
-      },
-      "enabled": true
-    },
-    {
       "id": "cf-gateway",
       "name": "Cloudflare Gateway",
       "url": "https://xwfpeb16ii.cloudflare-gateway.com/dns-query",
-      "ips": [
-        "104.19.148.96"
-      ],
+      "enabled": true,
       "ech_enabled": true,
-      "ech_auto_update": false,
-      "quic": false,
-      "cert_verify": {},
-      "enabled": true
+      "cert_verify": {}
+    },
+    {
+      "id": "cf-standard",
+      "name": "Cloudflare DNS",
+      "url": "https://cloudflare-dns.com/dns-query",
+      "enabled": true,
+      "ech_enabled": true,
+      "cert_verify": {}
+    },
+    {
+      "id": "nextdns-fronted",
+      "name": "NextDNS (Fronted)",
+      "url": "https://dns.nextdns.io/d1e7af",
+      "sni": "nextdns.io",
+      "enabled": true,
+      "ips": [
+        "103.170.232.254"
+      ],
+      "cert_verify": {
+        "mode": "allow_names",
+        "names": ["nextdns.io"]
+      }
+    },
+    {
+      "id": "cleanbrowsing-fronted",
+      "name": "CleanBrowsing (Fronted)",
+      "url": "https://doh.cleanbrowsing.org/doh/security-filter/",
+      "sni": "cleanbrowsing.org",
+      "enabled": true,
+      "ips": [
+        "185.228.168.168"
+      ],
+      "cert_verify": {}
     },
     {
       "id": "v-recipes",
-      "name": "v.recipes ",
+      "name": "v.recipes (Direct)",
       "url": "https://v.recipes/dns-cn",
+      "enabled": true,
       "ips": [
         "104.19.148.96"
       ],
-      "ech_enabled": false,
-      "ech_auto_update": false,
-      "quic": false,
-      "cert_verify": {},
-      "enabled": true
+      "cert_verify": {}
     }
   ],
   "ech_profiles": [

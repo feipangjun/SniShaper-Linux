@@ -21,7 +21,6 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -225,6 +224,7 @@ type DNSNode struct {
 
 type CloudflareConfig struct {
 	PreferredIPs []string `json:"preferred_ips"`
+	DoHURL       string   `json:"doh_url,omitempty"`
 	AutoUpdate   bool     `json:"auto_update"`
 	APIKey       string   `json:"api_key"`
 }
@@ -1446,158 +1446,33 @@ func (p *ProxyServer) handleConnect(w http.ResponseWriter, req *http.Request, ru
 	}
 }
 
-// defaultDoHServers 默认DoH解析服务器列表，按顺序尝试
-var defaultDoHServers = []string{
-	"https://1.12.12.12/resolve",
-	"https://doh.pub/resolve",
-	"https://120.53.53.53/resolve",
-	"https://dns.alidns.com/resolve",
-	"https://223.6.6.6/resolve",
-	"https://223.5.5.5/resolve",
-	"https://dns.google/resolve",
-	"https://cloudflare-dns.com/resolve",
-	"https://doh.360.cn/resolve",
-	"https://101.6.6.6:8443/resolve",
-}
-
-// DoHEnabled 控制是否使用DoH解析（仅代理关闭时可用）
-var DoHEnabled = false
-
-// resolveWithDoHServers 使用提供的DoH服务器列表按顺序解析域名
-func resolveWithDoHServers(ctx context.Context, domain string, servers []string) (net.IP, error) {
-	if len(servers) == 0 {
-		return nil, fmt.Errorf("no DoH servers provided")
-	}
-
-	// 尝试每个服务器，失败则换下一个，循环
-	attempts := 0
-	maxAttempts := len(servers) * 2 // 最多循环2轮
-
-	for attempts < maxAttempts {
-		server := servers[attempts%len(servers)]
-		attempts++
-
-		ip, err := queryDoHServer(ctx, server, domain)
-		if err == nil && ip != nil {
-			return ip, nil
-		}
-
-		log.Printf("[Direct] DoH server %s failed for %s: %v, trying next", server, domain, err)
-	}
-
-	return nil, fmt.Errorf("all DoH servers failed after %d attempts", attempts)
-}
-
-// queryDoHServer 向单个DoH服务器查询域名
-func queryDoHServer(ctx context.Context, serverURL, domain string) (net.IP, error) {
-	// 构建查询URL
-	queryURL := fmt.Sprintf("%s?name=%s&type=A", serverURL, url.QueryEscape(domain))
-
-	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Accept", "application/dns-json")
-
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Status int `json:"Status"`
-		Answer []struct {
-			Type int    `json:"type"`
-			Data string `json:"data"`
-		} `json:"Answer"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	if result.Status != 0 {
-		return nil, fmt.Errorf("DNS error status: %d", result.Status)
-	}
-
-	// 返回第一个A记录
-	for _, ans := range result.Answer {
-		if ans.Type == 1 { // A记录
-			ip := net.ParseIP(ans.Data)
-			if ip != nil {
-				return ip, nil
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("no A record found")
-}
-
 func (p *ProxyServer) directConnect(w http.ResponseWriter, req *http.Request) {
 	targetAuthority := req.URL.Host
 	if targetAuthority == "" {
 		targetAuthority = req.Host
 	}
 
-	// Extract hostname from targetAuthority
 	host, port, err := net.SplitHostPort(targetAuthority)
 	if err != nil {
 		host = targetAuthority
 		port = "443"
 	}
 
-	// Check if host is already an IP address
 	targetIP := net.ParseIP(host)
 	var targetAddr string
 
 	if targetIP != nil {
-		// Host is already an IP, use it directly
 		targetAddr = net.JoinHostPort(host, port)
 		log.Printf("[Direct] Connecting to %s (IP)", targetAddr)
 	} else {
-		// Host is a domain,根据DoH开关决定是否使用DoH解析
-		if DoHEnabled {
-			// 使用DoH解析
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			ip, err := resolveWithDoHServers(ctx, host, defaultDoHServers)
-			if err != nil {
-				log.Printf("[Direct] All DoH servers failed for %s: %v, falling back to system DNS", host, err)
-				// 回退到系统DNS
-				sysIPs, err := net.LookupIP(host)
-				if err != nil || len(sysIPs) == 0 {
-					http.Error(w, "Failed to resolve host", http.StatusBadGateway)
-					return
-				}
-				targetIP = sysIPs[0]
-			} else {
-				targetIP = ip
-			}
-
-			targetAddr = net.JoinHostPort(targetIP.String(), port)
-			log.Printf("[Direct] Connecting to %s -> %s (DoH resolved)", host, targetAddr)
-		} else {
-			// 使用系统DNS解析
-			sysIPs, err := net.LookupIP(host)
-			if err != nil || len(sysIPs) == 0 {
-				http.Error(w, "Failed to resolve host", http.StatusBadGateway)
-				return
-			}
-			targetIP = sysIPs[0]
-			targetAddr = net.JoinHostPort(targetIP.String(), port)
-			log.Printf("[Direct] Connecting to %s -> %s (System DNS)", host, targetAddr)
+		sysIPs, err := net.LookupIP(host)
+		if err != nil || len(sysIPs) == 0 {
+			http.Error(w, "Failed to resolve host", http.StatusBadGateway)
+			return
 		}
+		targetIP = sysIPs[0]
+		targetAddr = net.JoinHostPort(targetIP.String(), port)
+		log.Printf("[Direct] Connecting to %s -> %s (System DNS)", host, targetAddr)
 	}
 
 	dialer := &net.Dialer{
@@ -3446,12 +3321,46 @@ func (p *ProxyServer) establishUpstreamConn(host string, rule Rule, dialCandidat
 }
 
 func (p *ProxyServer) dialWithRule(ctx context.Context, network, addr string, _ Rule) (net.Conn, error) {
-	// Default direct dialer
 	dialer := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
 	return dialer.DialContext(ctx, network, addr)
+}
+
+func (p *ProxyServer) TestDoHConnection(ctx context.Context, host, port string, sni string, echEnabled bool, ips []string, certVerify CertVerifyConfig) (net.Conn, error) {
+	var addr string
+	if len(ips) > 0 {
+		addr = net.JoinHostPort(ips[0], port)
+	} else {
+		addr = net.JoinHostPort(host, port)
+	}
+
+	conn, err := p.dialWithRule(ctx, "tcp", addr, Rule{})
+	if err != nil {
+		return nil, err
+	}
+
+	rule := Rule{
+		SniFake:     sni,
+		SniPolicy:   "fake",
+		ECHEnabled:  echEnabled,
+		CertVerify:  certVerify,
+	}
+
+	echConfig := p.resolveRuleECHConfig(host, rule)
+	verifyName := host
+	if sni != "" {
+		verifyName = sni
+	}
+
+	uconn := p.GetUConn(conn, sni, verifyName, rule, false, "http/1.1", echConfig)
+	if err := uconn.HandshakeContext(ctx); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	return uconn, nil
 }
 
 // FetchECH performs a one-off ECH resolution via DoH for a specific domain and upstream

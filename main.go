@@ -11,7 +11,9 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -1034,7 +1036,7 @@ func NewAPIServer(addr string, app *CLIApp) *APIServer {
 	mux.HandleFunc("/tun/start", s.handleTUNStart)
 	mux.HandleFunc("/tun/stop", s.handleTUNStop)
 	mux.HandleFunc("/tun/status", s.handleTUNStatus)
-	mux.HandleFunc("/api/doh", s.handleDoH)
+	mux.HandleFunc("/api/doh/test", s.handleDoHTest)
 
 	s.server = &http.Server{
 		Addr:    addr,
@@ -1877,11 +1879,6 @@ func (s *APIServer) handleProxyStop(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[ProxyStop] System proxy disabled")
 		}
 	}
-	// 停止代理服务器前关闭DoH
-	if proxy.DoHEnabled {
-		proxy.DoHEnabled = false
-		log.Printf("[ProxyStop] DoH disabled")
-	}
 
 	// 停止代理服务器，关闭8080端口
 	log.Printf("[ProxyStop] Proxy running before stop: %v", s.app.proxyServer.IsRunning())
@@ -1984,29 +1981,154 @@ func (s *APIServer) handleTUNStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-func (s *APIServer) handleDoH(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		json.NewEncoder(w).Encode(map[string]bool{"enabled": proxy.DoHEnabled})
-	case http.MethodPost:
-		action := r.URL.Query().Get("action")
-		if action == "enable" {
-			// 开启DoH必须先开启代理，否则系统代理设置会导致访问错误
-			if !s.app.proxyServer.IsRunning() {
-				http.Error(w, "DoH can only be enabled when proxy is running", http.StatusBadRequest)
-				return
-			}
-			proxy.DoHEnabled = true
-			json.NewEncoder(w).Encode(map[string]string{"status": "enabled"})
-		} else if action == "disable" {
-			proxy.DoHEnabled = false
-			json.NewEncoder(w).Encode(map[string]string{"status": "disabled"})
-		} else {
-			http.Error(w, "Invalid action", http.StatusBadRequest)
-		}
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+func (s *APIServer) handleDoHTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", 405)
+		return
 	}
+
+	serverURL := r.URL.Query().Get("url")
+	if serverURL == "" {
+		http.Error(w, "Missing url parameter", 400)
+		return
+	}
+
+	sni := r.URL.Query().Get("sni")
+	echEnabled := r.URL.Query().Get("ech") == "1"
+	ipsParam := r.URL.Query().Get("ips")
+	serverId := r.URL.Query().Get("serverId")
+
+	var ips []string
+	if ipsParam != "" {
+		ips = strings.Split(ipsParam, ",")
+	}
+
+	start := time.Now()
+
+	parsedURL, err := url.Parse(serverURL)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "invalid url",
+			"latency": time.Since(start).Milliseconds(),
+		})
+		return
+	}
+
+	host := parsedURL.Hostname()
+	port := parsedURL.Port()
+	if port == "" {
+		port = "443"
+	}
+
+	testURL := serverURL
+	if strings.Contains(serverURL, "google") {
+		testURL = testURL + "?name=example.com&type=A"
+	} else {
+		testURL = testURL + "?name=example.com"
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	var certVerify proxy.CertVerifyConfig
+	if serverId != "" {
+		nodes := s.app.ruleManager.GetDNSNodes()
+		for _, node := range nodes {
+			if node.ID == serverId {
+				certVerify = node.CertVerify
+				break
+			}
+		}
+	}
+
+	var tlsConn net.Conn
+	if echEnabled || sni != "" || certVerify.Mode != "" {
+		tlsConn, err = s.app.proxyServer.TestDoHConnection(ctx, host, port, sni, echEnabled, ips, certVerify)
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "connection failed: " + err.Error(),
+				"latency": time.Since(start).Milliseconds(),
+			})
+			return
+		}
+		defer tlsConn.Close()
+	} else {
+		addr := net.JoinHostPort(host, port)
+		dialer := &net.Dialer{}
+		var conn net.Conn
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "dial failed: " + err.Error(),
+				"latency": time.Since(start).Milliseconds(),
+			})
+			return
+		}
+		defer conn.Close()
+
+		tlsConn = tls.Client(conn, &tls.Config{ServerName: host})
+		if err := tlsConn.(*tls.Conn).HandshakeContext(ctx); err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "tls handshake failed: " + err.Error(),
+				"latency": time.Since(start).Milliseconds(),
+			})
+			return
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", testURL, nil)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "invalid request",
+			"latency": time.Since(start).Milliseconds(),
+		})
+		return
+	}
+
+	req.Header.Set("Accept", "application/dns-json")
+	req.Header.Set("Host", host)
+
+	err = req.Write(tlsConn)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "request write failed: " + err.Error(),
+			"latency": time.Since(start).Milliseconds(),
+		})
+		return
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(tlsConn), req)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "response read failed: " + err.Error(),
+			"latency": time.Since(start).Milliseconds(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	latency := time.Since(start).Milliseconds()
+
+	if resp.StatusCode != http.StatusOK {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("HTTP %d", resp.StatusCode),
+			"latency": latency,
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"latency": latency,
+	})
 }
 
 func (s *APIServer) Start() error {
