@@ -1,32 +1,30 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react-swc'
+import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  css: {
-    transformer: 'lightningcss',
-  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    cssMinify: 'lightningcss',
     target: 'esnext',
     sourcemap: false,
-    minify: 'esbuild',
     modulePreload: { polyfill: false },
     commonjsOptions: {
       transformMixedEsModules: true,
     },
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          mui: ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
+        codeSplitting: {
+          groups: [
+            {
+              name: 'mui',
+              test: /[\\/]node_modules[\\/](@mui|@emotion)[\\/]/,
+              priority: 20,
+            },
+          ],
         },
       },
     },
-  },
-  esbuild: {
-    legalComments: 'none',
   },
   server: {
     port: 5174,
