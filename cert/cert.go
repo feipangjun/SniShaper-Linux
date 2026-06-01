@@ -3,13 +3,16 @@ package cert
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -20,73 +23,16 @@ type CertManager struct {
 	certMu  sync.RWMutex
 	caPath  string
 	keyPath string
+
+	lastStatus CAInstallStatus
+	lastCheck  time.Time
 }
 
-func InitCertManager(certPath string) (*CertManager, error) {
-	if certPath == "" {
-		certPath = "cert"
-	}
-
-	if err := os.MkdirAll(certPath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create cert directory: %w", err)
-	}
-
-	caPath := filepath.Join(certPath, "ca.crt")
-	keyPath := filepath.Join(certPath, "ca.key")
-
-	cm := &CertManager{
+func NewCertManager(caPath, keyPath string) *CertManager {
+	return &CertManager{
 		caPath:  caPath,
 		keyPath: keyPath,
 	}
-
-	if err := cm.LoadCA(); err != nil {
-		return nil, fmt.Errorf("failed to load CA: %w", err)
-	}
-
-	return cm, nil
-}
-
-func (cm *CertManager) LoadCA() error {
-	cm.certMu.Lock()
-	defer cm.certMu.Unlock()
-
-	caData, err := os.ReadFile(cm.caPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return cm.generateCAUnlocked()
-		}
-		return err
-	}
-
-	block, _ := pem.Decode(caData)
-	if block == nil {
-		return fmt.Errorf("failed to decode CA certificate PEM")
-	}
-
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return err
-	}
-
-	keyData, err := os.ReadFile(cm.keyPath)
-	if err != nil {
-		return err
-	}
-
-	keyBlock, _ := pem.Decode(keyData)
-	if keyBlock == nil {
-		return fmt.Errorf("failed to decode CA key PEM")
-	}
-
-	key, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
-	if err != nil {
-		return err
-	}
-
-	cm.caCert = cert
-	cm.caKey = key
-
-	return nil
 }
 
 func (cm *CertManager) generateCAUnlocked() error {
@@ -160,6 +106,47 @@ func (cm *CertManager) saveCA() error {
 	return nil
 }
 
+func (cm *CertManager) LoadCA() error {
+	cm.certMu.Lock()
+	defer cm.certMu.Unlock()
+
+	caData, err := os.ReadFile(cm.caPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cm.generateCAUnlocked()
+		}
+		return err
+	}
+
+	block, _ := pem.Decode(caData)
+	if block == nil {
+		return fmt.Errorf("failed to decode PEM block from CA certificate")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return err
+	}
+
+	keyData, err := os.ReadFile(cm.keyPath)
+	if err != nil {
+		return err
+	}
+
+	keyBlock, _ := pem.Decode(keyData)
+	if keyBlock == nil {
+		return fmt.Errorf("failed to decode PEM block from CA key")
+	}
+	key, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return err
+	}
+
+	cm.caCert = cert
+	cm.caKey = key
+
+	return nil
+}
+
 func (cm *CertManager) GetCACertPath() string {
 	return cm.caPath
 }
@@ -191,32 +178,8 @@ func (cm *CertManager) GetCAKey() interface{} {
 }
 
 func (cm *CertManager) IsCAInstalled() bool {
-	caDest := "/usr/local/share/ca-certificates/snishaper-ca.crt"
-	_, err := os.Stat(caDest)
-	return err == nil
-}
-
-type InstalledCert struct {
-	Subject    string `json:"subject"`
-	Thumbprint string `json:"thumbprint"`
-	Token      string `json:"token"`
-}
-
-func (cm *CertManager) GetInstalledCerts() []InstalledCert {
-	cm.certMu.RLock()
-	defer cm.certMu.RUnlock()
-
-	if cm.caCert == nil {
-		return []InstalledCert{}
-	}
-
-	return []InstalledCert{
-		{
-			Subject:    cm.caCert.Subject.String(),
-			Thumbprint: fmt.Sprintf("%x", cm.caCert.Raw),
-			Token:      "ca-cert",
-		},
-	}
+	status := cm.GetCAInstallStatus()
+	return status.Installed
 }
 
 type CAInstallStatus struct {
@@ -227,47 +190,40 @@ type CAInstallStatus struct {
 }
 
 func (cm *CertManager) GetCAInstallStatus() CAInstallStatus {
-	cm.certMu.RLock()
-	defer cm.certMu.RUnlock()
-
-	installed := cm.IsCAInstalled()
-
-	return CAInstallStatus{
-		Installed:   installed,
-		Platform:    "linux",
-		CertPath:    cm.caPath,
-		InstallHelp: "CA 证书位于: " + cm.caPath + "\n\n安装步骤：\n1. sudo cp " + cm.caPath + " /usr/local/share/ca-certificates/snishaper-ca.crt\n2. sudo update-ca-certificates\n3. 重启浏览器",
+	cm.certMu.Lock()
+	if !cm.lastCheck.IsZero() && time.Since(cm.lastCheck) < 5*time.Minute {
+		status := cm.lastStatus
+		cm.certMu.Unlock()
+		return status
 	}
+	cm.certMu.Unlock()
+
+	status := getLinuxCAStatus(cm)
+
+	cm.certMu.Lock()
+	cm.lastStatus = status
+	cm.lastCheck = time.Now()
+	cm.certMu.Unlock()
+
+	return status
 }
 
-func (cm *CertManager) InstallCA() error {
-	caDest := "/usr/local/share/ca-certificates/snishaper-ca.crt"
-	caDir := "/usr/local/share/ca-certificates"
+type InstalledCert struct {
+	Subject       string `json:"subject"`
+	Thumbprint    string `json:"thumbprint"`
+	NotAfter      string `json:"notAfter"`
+	StoreName     string `json:"storeName"`
+	StoreLocation string `json:"storeLocation"`
+	Token         string `json:"token"`
+}
 
-	fi, err := os.Stat(caDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			if err := os.MkdirAll(caDir, 0755); err != nil {
-				return fmt.Errorf("failed to create CA certificates directory: %w\nCA 证书已生成在: %s", err, cm.caPath)
-			}
-		} else {
-			return fmt.Errorf("failed to check CA certificates directory: %w", err)
-		}
-	} else if !fi.IsDir() {
-		return fmt.Errorf("CA certificates directory is not a directory: %s", caDir)
+func (cm *CertManager) GetCACertPEM() string {
+	cm.certMu.RLock()
+	defer cm.certMu.RUnlock()
+	if cm.caCert == nil {
+		return ""
 	}
-
-	data, err := os.ReadFile(cm.caPath)
-	if err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(caDest, data, 0644); err != nil {
-		return fmt.Errorf("failed to copy CA certificate: %w\nCA 证书已生成在: %s", err, cm.caPath)
-	}
-
-	fmt.Println("[Cert] CA 证书已安装到: " + caDest)
-	return nil
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cm.caCert.Raw}))
 }
 
 func (cm *CertManager) ExportCert() ([]byte, error) {
@@ -279,7 +235,15 @@ func (cm *CertManager) ExportCert() ([]byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cm.caCert.Raw}), nil
 }
 
-func (cm *CertManager) RegenerateCA() error {
+func (cm *CertManager) RegenerateCA(password string) error {
+	certs, err := cm.GetInstalledCertificates()
+	if err == nil {
+		for _, c := range certs {
+			fmt.Printf("[Cert] Cleaning up old cert: %s\n", c.Thumbprint)
+			_ = cm.UninstallCertificate(c.Token, password)
+		}
+	}
+
 	cm.certMu.Lock()
 	if err := cm.generateCAUnlocked(); err != nil {
 		cm.certMu.Unlock()
@@ -288,9 +252,35 @@ func (cm *CertManager) RegenerateCA() error {
 	cm.certMu.Unlock()
 
 	fmt.Println("[Cert] CA certificate regenerated successfully")
-	return nil
+
+	return cm.InstallCA(password)
 }
 
-func bigint(b []byte) *big.Int {
-	return new(big.Int).SetBytes(b)
+func (cm *CertManager) GetThumbprint() string {
+	cm.certMu.RLock()
+	defer cm.certMu.RUnlock()
+	if cm.caCert == nil {
+		return ""
+	}
+	sum := sha1.Sum(cm.caCert.Raw)
+	return strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+func InitCertManager(certDir string) (*CertManager, error) {
+	os.MkdirAll(certDir, 0755)
+
+	cm := NewCertManager(
+		filepath.Join(certDir, "ca.crt"),
+		filepath.Join(certDir, "ca.key"),
+	)
+
+	if err := cm.LoadCA(); err != nil {
+		_ = os.Remove(cm.caPath)
+		_ = os.Remove(cm.keyPath)
+		if genErr := cm.GenerateCA(); genErr != nil {
+			return nil, fmt.Errorf("load existing CA failed: %v; regenerate failed: %w", err, genErr)
+		}
+	}
+
+	return cm, nil
 }

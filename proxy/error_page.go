@@ -393,14 +393,7 @@ func isRSTError(err error) bool {
 	}
 	if opErr, ok := err.(*net.OpError); ok {
 		if syscallErr, ok := opErr.Err.(*syscall.Errno); ok {
-			errno := *syscallErr
-			if errno == syscall.ECONNRESET {
-				return true
-			}
-			// Windows-specific error code
-			if errno == 10054 { // WSAECONNRESET
-				return true
-			}
+			return *syscallErr == syscall.ECONNRESET
 		}
 	}
 	errStr := strings.ToLower(err.Error())

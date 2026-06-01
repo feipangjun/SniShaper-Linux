@@ -33,6 +33,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	utls "github.com/refraction-networking/utls"
+	"github.com/things-go/go-socks5"
 	"golang.org/x/net/http2"
 )
 
@@ -54,9 +55,10 @@ type CertGenerator interface {
 type ProxyServer struct {
 	Server        *http.Server
 	listenAddr    string
+	socks5Addr    string
 	rules         *RuleManager
 	running       bool
-	mode          string // global runtime mode: "mitm" | "transparent" | "tls-rf" | "quic"
+	mode          string
 	mu            sync.RWMutex
 	certCacheMu   sync.RWMutex
 	certCache     map[string]*tls.Certificate
@@ -70,6 +72,9 @@ type ProxyServer struct {
 	bytesDown     int64
 	bytesUp       int64
 	certBypassMap sync.Map
+	socks5Enabled bool
+	socks5Server  *socks5.Server
+	socks5Tracker *socks5ConnTracker
 }
 
 type RuleManager struct {
@@ -83,13 +88,13 @@ type RuleManager struct {
 	tunConfig                  TUNConfig
 	closeToTray                bool
 	autoStart                  bool
-	autoProxy                  bool
 	showMainOnAutoStart        bool
 	autoEnableProxyOnAutoStart bool
+	socks5Enabled              bool
+	socks5Port                 string
 	serverHost                 string
 	serverAuth                 string
 	listenPort                 string
-	apiPort                    string
 	echProfiles                []ECHProfile
 	autoRouter                 *AutoRouter
 	autoRoutingConfig          AutoRoutingConfig
@@ -168,12 +173,11 @@ type ECHProfile struct {
 
 type SettingsConfig struct {
 	ListenPort                 string            `json:"listen_port"`
-	ApiPort                    string            `json:"api_port,omitempty"`
+	Socks5Port                 string            `json:"socks5_port,omitempty"`
 	ServerHost                 string            `json:"server_host,omitempty"`
 	ServerAuth                 string            `json:"server_auth,omitempty"`
 	CloseToTray                *bool             `json:"close_to_tray,omitempty"`
 	AutoStart                  *bool             `json:"auto_start,omitempty"`
-	AutoProxy                  *bool             `json:"auto_proxy,omitempty"`
 	ShowMainWindowOnAutoStart  *bool             `json:"show_main_window_on_auto_start,omitempty"`
 	AutoEnableProxyOnAutoStart *bool             `json:"auto_enable_proxy_on_auto_start,omitempty"`
 	AutoRouting                AutoRoutingConfig `json:"auto_routing,omitempty"`
@@ -181,6 +185,7 @@ type SettingsConfig struct {
 	Language                   string            `json:"language,omitempty"`
 	Theme                      string            `json:"theme,omitempty"`
 	CloudflareConfig           CloudflareConfig  `json:"cloudflare_config,omitempty"`
+	Socks5Enabled              *bool             `json:"socks5_enabled,omitempty"`
 }
 
 type TUNConfig struct {
@@ -224,7 +229,6 @@ type DNSNode struct {
 
 type CloudflareConfig struct {
 	PreferredIPs []string `json:"preferred_ips"`
-	DoHURL       string   `json:"doh_url,omitempty"`
 	AutoUpdate   bool     `json:"auto_update"`
 	APIKey       string   `json:"api_key"`
 }
@@ -897,6 +901,11 @@ func chooseUpstreamSNI(targetHost string, rule Rule) string {
 		if strings.TrimSpace(rule.SniFake) != "" {
 			return rule.SniFake
 		}
+		// In ECH mode, outer SNI must be a valid domain name (not a token like "linux-do").
+		// In non-ECH mode, hostAsToken is used for SNI camouflage to bypass DPI.
+		if rule.ECHEnabled {
+			return targetHost
+		}
 		return hostAsToken
 	case "upstream":
 		if upstreamHost := firstUpstreamHost(targetHost, resolvedUpstream); upstreamHost != "" && !isLiteralIP(upstreamHost) {
@@ -1040,10 +1049,6 @@ func (p *ProxyServer) GetAllCFIPsWithStats() []*IPStats {
 	return nil
 }
 
-func (p *ProxyServer) GetCFPoolIPs() []*IPStats {
-	return p.GetAllCFIPsWithStats()
-}
-
 func (p *ProxyServer) GetListenAddr() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -1088,9 +1093,7 @@ func (p *ProxyServer) Start() error {
 	}
 
 	srv := &http.Server{
-		Addr: p.listenAddr,
-		// Use raw handler instead of ServeMux: CONNECT uses authority-form
-		// and may not be routed by path-based muxes.
+		Addr:         p.listenAddr,
 		Handler:      http.HandlerFunc(p.handleRequest),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
@@ -1109,7 +1112,6 @@ func (p *ProxyServer) Start() error {
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		// Clean up pool if listen fails
 		if p.cfPool != nil {
 			p.cfPool.Stop()
 		}
@@ -1117,7 +1119,6 @@ func (p *ProxyServer) Start() error {
 	}
 
 	p.mu.Lock()
-	// Re-check state in case Stop/Start race happened while binding.
 	if p.running {
 		p.mu.Unlock()
 		_ = ln.Close()
@@ -1128,14 +1129,17 @@ func (p *ProxyServer) Start() error {
 	p.mu.Unlock()
 
 	go func() {
-		log.Printf("[Proxy] Server started on %s", listenAddr)
+		log.Printf("[Proxy] HTTP server started on %s", listenAddr)
+
 		tl := &trackingListener{
 			Listener: ln,
 			proxy:    p,
 		}
+
 		if err := srv.Serve(tl); err != nil && err != http.ErrServerClosed {
-			log.Printf("[Proxy] Server error: %v", err)
+			log.Printf("[Proxy] HTTP server error: %v", err)
 		}
+
 		p.mu.Lock()
 		if p.Server == srv {
 			p.running = false
@@ -1143,7 +1147,62 @@ func (p *ProxyServer) Start() error {
 		p.mu.Unlock()
 	}()
 
+	if p.socks5Enabled {
+		p.startSocks5()
+	}
+
 	return nil
+}
+
+type socks5ConnTracker struct {
+	net.Listener
+	conns sync.Map
+}
+
+func (l *socks5ConnTracker) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	l.conns.Store(conn.RemoteAddr().String(), conn)
+	return &socks5TrackedConn{Conn: conn, tracker: l}, nil
+}
+
+func (l *socks5ConnTracker) unregister(addr string) {
+	l.conns.Delete(addr)
+}
+
+func (l *socks5ConnTracker) getConn(addr string) net.Conn {
+	if v, ok := l.conns.Load(addr); ok {
+		return v.(net.Conn)
+	}
+	return nil
+}
+
+type socks5TrackedConn struct {
+	net.Conn
+	tracker *socks5ConnTracker
+}
+
+func (c *socks5TrackedConn) Close() error {
+	c.tracker.unregister(c.RemoteAddr().String())
+	return c.Conn.Close()
+}
+
+func (p *ProxyServer) startSocks5() {
+	p.socks5Server = p.newSocks5Server()
+	socks5Ln, err := net.Listen("tcp", p.socks5Addr)
+	if err != nil {
+		log.Printf("[Proxy] Failed to listen SOCKS5 on %s: %v", p.socks5Addr, err)
+		return
+	}
+	p.socks5Tracker = &socks5ConnTracker{Listener: socks5Ln}
+	go func() {
+		log.Printf("[Proxy] SOCKS5 server started on %s", p.socks5Addr)
+		if err := p.socks5Server.Serve(p.socks5Tracker); err != nil {
+			log.Printf("[Proxy] SOCKS5 server error: %v", err)
+		}
+	}()
 }
 
 func (p *ProxyServer) Stop() error {
@@ -1171,6 +1230,7 @@ func (p *ProxyServer) IsRunning() bool {
 }
 
 func (p *ProxyServer) handleRequest(w http.ResponseWriter, req *http.Request) {
+
 	host := req.Host
 	if host == "" {
 		host = req.URL.Host
@@ -1192,14 +1252,42 @@ func (p *ProxyServer) handleRequest(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (p *ProxyServer) handleConnect(w http.ResponseWriter, req *http.Request, rule Rule) {
+func (p *ProxyServer) SetSocks5Enabled(enabled bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.socks5Enabled = enabled
+}
 
-	targetAuthority := req.URL.Host
-	if targetAuthority == "" {
-		targetAuthority = req.Host
-	}
-	targetHost := normalizeHost(targetAuthority)
-	targetAddr := ensureAddrWithPort(targetAuthority, "443")
+func (p *ProxyServer) IsSocks5Enabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.socks5Enabled
+}
+
+func (p *ProxyServer) SetSocks5Addr(addr string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.socks5Addr = addr
+}
+
+func (p *ProxyServer) GetSocks5Addr() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.socks5Addr
+}
+
+type connectResult struct {
+	conn           net.Conn
+	clientConn     net.Conn
+	dialCandidates []string
+	dialAddr       string
+	effectiveMode  string
+	targetHost     string
+	targetAddr     string
+	rule           Rule
+}
+
+func (p *ProxyServer) prepareConnect(targetHost, targetAddr string, rule Rule) *connectResult {
 	effectiveMode := rule.Mode
 	resolvedUpstream := resolveRuleUpstream(targetHost, rule)
 
@@ -1233,14 +1321,88 @@ func (p *ProxyServer) handleConnect(w http.ResponseWriter, req *http.Request, ru
 
 	p.tracef("[Connect] target=%s host=%s mode=%s->%s upstream=%s sni_fake=%s", targetAddr, targetHost, rule.Mode, effectiveMode, resolvedUpstream, rule.SniFake)
 
-	// 对于 direct 模式，直接连接目标
-	if effectiveMode == "direct" {
+	return &connectResult{
+		effectiveMode: effectiveMode,
+		targetHost:    targetHost,
+		targetAddr:    targetAddr,
+		rule:          rule,
+	}
+}
+
+func (p *ProxyServer) dialUpstream(cr *connectResult) error {
+	dialCandidates := p.buildDialCandidates(context.Background(), cr.targetHost, cr.targetAddr, cr.rule, cr.effectiveMode)
+	if len(dialCandidates) == 0 {
+		dialCandidates = []string{cr.targetAddr}
+	}
+	cr.dialCandidates = dialCandidates
+	cr.dialAddr = dialCandidates[0]
+
+	log.Printf("[Connect] Using candidates %v for host %s", dialCandidates, cr.targetHost)
+
+	dial := func(network, addr string) (net.Conn, error) {
+		return p.dialWithRule(context.Background(), network, addr, cr.rule)
+	}
+
+	if len(dialCandidates) > 1 {
+		var lastErr error
+		for _, addr := range dialCandidates {
+			conn, err := dial("tcp", addr)
+			if err == nil {
+				cr.dialAddr = addr
+				cr.conn = conn
+				log.Printf("[Connect] Sequential dial success: %s", cr.dialAddr)
+				if cr.rule.UseCFPool && p.cfPool != nil {
+					host, _, _ := net.SplitHostPort(addr)
+					if host != "" {
+						p.cfPool.ReportSuccess(host)
+					}
+				}
+				return nil
+			}
+			log.Printf("[Connect] Connect failed to %s: %v", addr, err)
+			lastErr = err
+			if cr.rule.UseCFPool && p.cfPool != nil {
+				host, _, _ := net.SplitHostPort(addr)
+				if host != "" {
+					p.cfPool.ReportFailure(host)
+				}
+			}
+		}
+		return lastErr
+	}
+
+	for _, candidate := range dialCandidates {
+		conn, err := dial("tcp", candidate)
+		if err == nil {
+			cr.dialAddr = candidate
+			cr.conn = conn
+			return nil
+		}
+		log.Printf("[Connect] Connect failed to %s: %v", candidate, err)
+	}
+	return fmt.Errorf("all upstream connect attempts failed: %v", dialCandidates)
+}
+
+func (p *ProxyServer) handleConnect(w http.ResponseWriter, req *http.Request, rule Rule) {
+	targetAuthority := req.URL.Host
+	if targetAuthority == "" {
+		targetAuthority = req.Host
+	}
+	targetHost := normalizeHost(targetAuthority)
+	targetAddr := ensureAddrWithPort(targetAuthority, "443")
+
+	cr := p.prepareConnect(targetHost, targetAddr, rule)
+
+	switch cr.effectiveMode {
+	case "direct":
 		p.directConnect(w, req)
+		return
+	case "block", "reject":
+		http.Error(w, "Blocked by rule", http.StatusForbidden)
 		return
 	}
 
-	// 对于 server 模式，直接劫持并使用内置 HTTP 服务解析，不进行原目标拨号
-	if effectiveMode == "server" {
+	if cr.effectiveMode == "server" {
 		hijacker, ok := w.(http.Hijacker)
 		if !ok {
 			http.Error(w, "Hijack not supported", http.StatusInternalServerError)
@@ -1261,11 +1423,11 @@ func (p *ProxyServer) handleConnect(w http.ResponseWriter, req *http.Request, ru
 		}
 		clientConn = wrapHijackedConn(clientConn, rw)
 		_ = clientConn.SetDeadline(time.Time{})
-		p.handleServerMITM(clientConn, targetHost, rule)
+		p.handleServerMITM(clientConn, cr.targetHost, cr.rule)
 		return
 	}
 
-	if effectiveMode == "quic" {
+	if cr.effectiveMode == "quic" {
 		hijacker, ok := w.(http.Hijacker)
 		if !ok {
 			http.Error(w, "Hijack not supported", http.StatusInternalServerError)
@@ -1286,163 +1448,52 @@ func (p *ProxyServer) handleConnect(w http.ResponseWriter, req *http.Request, ru
 		}
 		clientConn = wrapHijackedConn(clientConn, rw)
 		_ = clientConn.SetDeadline(time.Time{})
-		p.handleQUICMITM(clientConn, targetHost, rule)
+		p.handleQUICMITM(clientConn, cr.targetHost, cr.rule)
 		return
 	}
 
-	dialCandidates := p.buildDialCandidates(context.Background(), targetHost, targetAddr, rule, effectiveMode)
-	if len(dialCandidates) == 0 {
-		dialCandidates = []string{targetAddr}
-	}
-	dialAddr := dialCandidates[0]
-
-	log.Printf("[Connect] Using candidates %v for host %s", dialCandidates, targetHost)
-
-	var conn net.Conn
-	var err error
-
-	if effectiveMode != "mitm" {
-		// 使用私有 dial 方法以支持 Warp
-		dial := func(network, addr string) (net.Conn, error) {
-			return p.dialWithRule(context.Background(), network, addr, rule)
-		}
-
-		// 单路稳定性优先（结合顺序回退）
-		if len(dialCandidates) > 1 {
-			var lastErr error
-			for _, addr := range dialCandidates {
-				conn, err = dial("tcp", addr)
-				if err == nil {
-					dialAddr = addr
-					log.Printf("[Connect] Sequential dial success: %s", dialAddr)
-
-					// 如果使用了 CF 优选池，回馈成功状态
-					if rule.UseCFPool && p.cfPool != nil {
-						host, _, _ := net.SplitHostPort(addr)
-						if host != "" {
-							p.cfPool.ReportSuccess(host)
-						}
-					}
-					break
-				}
-
-				log.Printf("[Connect] Connect failed to %s: %v", addr, err)
-				lastErr = err
-
-				// 如果该候选节点连通失败，且来自于 CF 优选池，上报失败实施惩罚
-				if rule.UseCFPool && p.cfPool != nil {
-					host, _, _ := net.SplitHostPort(addr)
-					if host != "" {
-						p.cfPool.ReportFailure(host)
-					}
-				}
-			}
-			if conn == nil {
-				err = lastErr
-			}
-		} else {
-			for _, candidate := range dialCandidates {
-				conn, err = dial("tcp", candidate)
-				if err == nil {
-					dialAddr = candidate
-					break
-				}
-				log.Printf("[Connect] Connect failed to %s: %v", candidate, err)
-			}
-		}
-		if err != nil || conn == nil {
-			http.Error(w, "Failed to connect to upstream", http.StatusBadGateway)
-			p.tracef("[Connect] All upstream connect attempts failed: %v", dialCandidates)
-			return
-		}
-	} else {
-		// For MITM we only need a raw TCP connect here so the browser can receive
-		// CONNECT 200 quickly; upstream TLS is established inside handleMITM.
-		dial := func(network, addr string) (net.Conn, error) {
-			return p.dialWithRule(context.Background(), network, addr, rule)
-		}
-		if len(dialCandidates) > 1 {
-			var lastErr error
-			for _, addr := range dialCandidates {
-				conn, err = dial("tcp", addr)
-				if err == nil {
-					dialAddr = addr
-					log.Printf("[Connect] Sequential dial success: %s", dialAddr)
-					if rule.UseCFPool && p.cfPool != nil {
-						host, _, _ := net.SplitHostPort(addr)
-						if host != "" {
-							p.cfPool.ReportSuccess(host)
-						}
-					}
-					break
-				}
-
-				log.Printf("[Connect] Connect failed to %s: %v", addr, err)
-				lastErr = err
-				if rule.UseCFPool && p.cfPool != nil {
-					host, _, _ := net.SplitHostPort(addr)
-					if host != "" {
-						p.cfPool.ReportFailure(host)
-					}
-				}
-			}
-			if conn == nil {
-				err = lastErr
-			}
-		} else {
-			for _, candidate := range dialCandidates {
-				conn, err = dial("tcp", candidate)
-				if err == nil {
-					dialAddr = candidate
-					break
-				}
-				log.Printf("[Connect] Connect failed to %s: %v", candidate, err)
-			}
-		}
-		if err != nil || conn == nil {
-			http.Error(w, "Failed to connect to upstream", http.StatusBadGateway)
-			p.tracef("[Connect] All upstream connect attempts failed: %v", dialCandidates)
-			return
-		}
+	if err := p.dialUpstream(cr); err != nil {
+		http.Error(w, "Failed to connect to upstream", http.StatusBadGateway)
+		p.tracef("[Connect] All upstream connect attempts failed: %v", cr.dialCandidates)
+		return
 	}
 
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "Hijack not supported", http.StatusInternalServerError)
-		conn.Close()
+		cr.conn.Close()
 		return
 	}
 
 	clientConn, rw, err := hijacker.Hijack()
 	if err != nil {
 		log.Printf("[Connect] Hijack failed: %v", err)
-		conn.Close()
+		cr.conn.Close()
 		return
 	}
 	if _, err := rw.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
 		log.Printf("[Connect] Write 200 failed: %v", err)
 		clientConn.Close()
-		conn.Close()
+		cr.conn.Close()
 		return
 	}
 	if err := rw.Flush(); err != nil {
 		log.Printf("[Connect] Flush 200 failed: %v", err)
 		clientConn.Close()
-		conn.Close()
+		cr.conn.Close()
 		return
 	}
 	clientConn = wrapHijackedConn(clientConn, rw)
 	_ = clientConn.SetDeadline(time.Time{})
-	_ = conn.SetDeadline(time.Time{})
+	_ = cr.conn.SetDeadline(time.Time{})
 
-	// 注意：不要在 hijack 后使用 defer，因为我们需要保持连接打开
-	switch effectiveMode {
+	switch cr.effectiveMode {
 	case "mitm":
-		p.handleMITM(clientConn, targetHost, rule, dialCandidates, dialAddr)
+		p.handleMITM(clientConn, cr.targetHost, cr.rule, cr.dialCandidates, cr.dialAddr)
 	case "tls-rf":
-		p.handleTLSFragment(clientConn, conn, targetHost, rule)
+		p.handleTLSFragment(clientConn, cr.conn, cr.targetHost, cr.rule)
 	default:
-		p.handleTransparent(clientConn, conn, targetHost, rule)
+		p.handleTransparent(clientConn, cr.conn, cr.targetHost, cr.rule)
 	}
 }
 
@@ -1451,37 +1502,16 @@ func (p *ProxyServer) directConnect(w http.ResponseWriter, req *http.Request) {
 	if targetAuthority == "" {
 		targetAuthority = req.Host
 	}
+	targetAddr := ensureAddrWithPort(targetAuthority, "443")
 
-	host, port, err := net.SplitHostPort(targetAuthority)
-	if err != nil {
-		host = targetAuthority
-		port = "443"
-	}
-
-	targetIP := net.ParseIP(host)
-	var targetAddr string
-
-	if targetIP != nil {
-		targetAddr = net.JoinHostPort(host, port)
-		log.Printf("[Direct] Connecting to %s (IP)", targetAddr)
-	} else {
-		sysIPs, err := net.LookupIP(host)
-		if err != nil || len(sysIPs) == 0 {
-			http.Error(w, "Failed to resolve host", http.StatusBadGateway)
-			return
-		}
-		targetIP = sysIPs[0]
-		targetAddr = net.JoinHostPort(targetIP.String(), port)
-		log.Printf("[Direct] Connecting to %s -> %s (System DNS)", host, targetAddr)
-	}
+	log.Printf("[Direct] Connecting to %s", targetAddr)
 
 	dialer := &net.Dialer{
-		Timeout:   15 * time.Second,
+		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
 	conn, err := dialer.Dial("tcp", targetAddr)
 	if err != nil {
-		log.Printf("[Direct] Failed to connect to %s: %v", targetAddr, err)
 		http.Error(w, "Failed to connect", http.StatusBadGateway)
 		return
 	}
@@ -1568,6 +1598,12 @@ func (p *ProxyServer) handleHTTP(w http.ResponseWriter, req *http.Request, rule 
 			httpsURL.Host = req.Host
 		}
 		http.Redirect(w, req, httpsURL.String(), http.StatusMovedPermanently)
+		return
+	}
+
+	switch rule.Mode {
+	case "block", "reject":
+		http.Error(w, "Blocked by rule", http.StatusForbidden)
 		return
 	}
 
@@ -1920,6 +1956,8 @@ func NewRuleManager(settingsPath, rulesPath string) *RuleManager {
 		rules:               []Rule{},
 		closeToTray:         true,
 		showMainOnAutoStart: true,
+		language:            "zh",
+		theme:               "dark",
 	}
 }
 
@@ -2073,7 +2111,6 @@ func (rm *RuleManager) loadSettingsConfig() error {
 	// 1. Set internal defaults first
 	rm.closeToTray = true
 	rm.autoStart = false
-	rm.autoProxy = false
 	rm.showMainOnAutoStart = true
 	rm.autoEnableProxyOnAutoStart = false
 
@@ -2085,8 +2122,8 @@ func (rm *RuleManager) loadSettingsConfig() error {
 	if config.ListenPort != "" {
 		rm.listenPort = config.ListenPort
 	}
-	if config.ApiPort != "" {
-		rm.apiPort = config.ApiPort
+	if config.Socks5Port != "" {
+		rm.socks5Port = config.Socks5Port
 	}
 	rm.autoRoutingConfig = config.AutoRouting
 	rm.language = config.Language
@@ -2098,14 +2135,14 @@ func (rm *RuleManager) loadSettingsConfig() error {
 	if config.AutoStart != nil {
 		rm.autoStart = *config.AutoStart
 	}
-	if config.AutoProxy != nil {
-		rm.autoProxy = *config.AutoProxy
-	}
 	if config.ShowMainWindowOnAutoStart != nil {
 		rm.showMainOnAutoStart = *config.ShowMainWindowOnAutoStart
 	}
 	if config.AutoEnableProxyOnAutoStart != nil {
 		rm.autoEnableProxyOnAutoStart = *config.AutoEnableProxyOnAutoStart
+	}
+	if config.Socks5Enabled != nil {
+		rm.socks5Enabled = *config.Socks5Enabled
 	}
 	rm.applySettingsDefaults()
 	return nil
@@ -2273,15 +2310,27 @@ func (rm *RuleManager) SetListenPort(port string) {
 	rm.mu.Unlock()
 }
 
-func (rm *RuleManager) GetApiPort() string {
+func (rm *RuleManager) GetSocks5Enabled() bool {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
-	return rm.apiPort
+	return rm.socks5Enabled
 }
 
-func (rm *RuleManager) SetApiPort(port string) {
+func (rm *RuleManager) SetSocks5Enabled(enabled bool) {
 	rm.mu.Lock()
-	rm.apiPort = port
+	rm.socks5Enabled = enabled
+	rm.mu.Unlock()
+}
+
+func (rm *RuleManager) GetSocks5Port() string {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return rm.socks5Port
+}
+
+func (rm *RuleManager) SetSocks5Port(port string) {
+	rm.mu.Lock()
+	rm.socks5Port = port
 	rm.mu.Unlock()
 }
 
@@ -2331,12 +2380,6 @@ func (rm *RuleManager) GetAutoStart() bool {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 	return rm.autoStart
-}
-
-func (rm *RuleManager) GetAutoProxy() bool {
-	rm.mu.RLock()
-	defer rm.mu.RUnlock()
-	return rm.autoProxy
 }
 
 func (rm *RuleManager) SetAutoStart(enabled bool) error {
@@ -2583,25 +2626,24 @@ func (rm *RuleManager) saveSettingsConfig() error {
 	if listenPort == "" {
 		listenPort = "8080"
 	}
-	apiPort := rm.apiPort
-	if apiPort == "" {
-		apiPort = "5173"
+	socks5Port := rm.socks5Port
+	if socks5Port == "" {
+		socks5Port = "8081"
 	}
 	closeToTray := rm.closeToTray
 	autoStart := rm.autoStart
-	autoProxy := rm.autoProxy
 	showMainOnAutoStart := rm.showMainOnAutoStart
 	autoEnableProxyOnAutoStart := rm.autoEnableProxyOnAutoStart
+	socks5Enabled := rm.socks5Enabled
 	cloudflareConfig := rm.cloudflareConfig
 	tunConfig := normalizeTUNConfig(rm.tunConfig)
 	settings := SettingsConfig{
 		ListenPort:                 listenPort,
-		ApiPort:                    apiPort,
+		Socks5Port:                 socks5Port,
 		ServerHost:                 rm.serverHost,
 		ServerAuth:                 rm.serverAuth,
 		CloseToTray:                &closeToTray,
 		AutoStart:                  &autoStart,
-		AutoProxy:                  &autoProxy,
 		ShowMainWindowOnAutoStart:  &showMainOnAutoStart,
 		AutoEnableProxyOnAutoStart: &autoEnableProxyOnAutoStart,
 		CloudflareConfig:           cloudflareConfig,
@@ -2609,6 +2651,7 @@ func (rm *RuleManager) saveSettingsConfig() error {
 		TUN:                        tunConfig,
 		Language:                   rm.language,
 		Theme:                      rm.theme,
+		Socks5Enabled:              &socks5Enabled,
 	}
 
 	data, err := json.MarshalIndent(settings, "", "  ")
@@ -2786,9 +2829,17 @@ func (p *ProxyServer) GetUConn(conn net.Conn, sni string, verifyName string, rul
 
 	verifyConn := buildVerifyConnection(verifyName, rule.CertVerify)
 
-	serverName := verifyName // Primary ServerName should be the Inner SNI for encryption
-	if serverName == "" {
+	// In ECH mode, ServerName must be the inner (real) target domain (verifyName).
+	// The outer SNI is automatically derived from the ECH config's public name.
+	// In non-ECH mode, ServerName uses the sni parameter (e.g., sni_fake from rule config).
+	var serverName string
+	if len(echConfig) > 0 {
+		serverName = verifyName
+	} else {
 		serverName = sni
+		if serverName == "" {
+			serverName = verifyName
+		}
 	}
 
 	skipVerify := allowInsecure
@@ -3320,47 +3371,13 @@ func (p *ProxyServer) establishUpstreamConn(host string, rule Rule, dialCandidat
 	return nil, "", finalErr
 }
 
-func (p *ProxyServer) dialWithRule(ctx context.Context, network, addr string, _ Rule) (net.Conn, error) {
+func (p *ProxyServer) dialWithRule(ctx context.Context, network, addr string, rule Rule) (net.Conn, error) {
+	// Default direct dialer
 	dialer := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
 	return dialer.DialContext(ctx, network, addr)
-}
-
-func (p *ProxyServer) TestDoHConnection(ctx context.Context, host, port string, sni string, echEnabled bool, ips []string, certVerify CertVerifyConfig) (net.Conn, error) {
-	var addr string
-	if len(ips) > 0 {
-		addr = net.JoinHostPort(ips[0], port)
-	} else {
-		addr = net.JoinHostPort(host, port)
-	}
-
-	conn, err := p.dialWithRule(ctx, "tcp", addr, Rule{})
-	if err != nil {
-		return nil, err
-	}
-
-	rule := Rule{
-		SniFake:     sni,
-		SniPolicy:   "fake",
-		ECHEnabled:  echEnabled,
-		CertVerify:  certVerify,
-	}
-
-	echConfig := p.resolveRuleECHConfig(host, rule)
-	verifyName := host
-	if sni != "" {
-		verifyName = sni
-	}
-
-	uconn := p.GetUConn(conn, sni, verifyName, rule, false, "http/1.1", echConfig)
-	if err := uconn.HandshakeContext(ctx); err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	return uconn, nil
 }
 
 // FetchECH performs a one-off ECH resolution via DoH for a specific domain and upstream
