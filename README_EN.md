@@ -1,7 +1,9 @@
 # SniShaper-Linux
 
 Linux cross-platform version of SniShaper — a local proxy tool supporting ECH / TLS-RF / QUIC for censorship circumvention.
+--
 
+Windows version: [https://github.com/snishaper/snishaper](https://github.com/snishaper/snishaper)
 ## Features
 
 - **HTTP/HTTPS Proxy** — CONNECT tunnel and MITM mode

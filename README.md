@@ -1,6 +1,8 @@
 # SniShaper-Linux
 
 SniShaper 的 Linux 跨平台版本 — 支持 ECH / TLS-RF / QUIC 的本地代理工具。
+--
+Windows版本：[https://github.com/snishaper/snishaper](https://github.com/snishaper/snishaper)
 
 ## 功能特性
 
