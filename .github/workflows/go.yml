@@ -18,6 +18,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: |
+          cd web
+          npm install
+
+      - name: Build web frontend
+        run: |
+          cd web
+          npm run build
+
+      - name: Check web build output
+        run: |
+          if [ ! -d web/dist ]; then
+            echo "web/dist not found"
+            exit 1
+          fi
+
+          if [ -z "$(ls -A web/dist)" ]; then
+            echo "web/dist is empty"
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -25,52 +54,35 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Show Go version
-        run: go version
+      - name: Show versions
+        run: |
+          node --version
+          npm --version
+          go version
 
       - name: Download Go dependencies
         run: go mod download
 
-      - name: Prepare embedded web files
-        run: |
-          mkdir -p web/dist
-          if [ ! -f web/dist/index.html ]; then
-            cat > web/dist/index.html <<'EOF'
-          <!doctype html>
-          <html>
-            <head>
-              <meta charset="utf-8">
-              <title>SniShaper CLI</title>
-            </head>
-            <body>
-              <h1>SniShaper CLI</h1>
-            </body>
-          </html>
-          EOF
-          fi
-
-      - name: Prepare package directory
-        run: |
-          rm -rf dist
-          mkdir -p dist/package
-
-      - name: Build binary
+      - name: Build Go binary
         env:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: amd64
         run: |
-          go build -trimpath -ldflags="-s -w" -o dist/package/snishaper .
-          chmod +x dist/package/snishaper
+          go build -trimpath -ldflags="-s -w" -o snishaper .
+          chmod +x snishaper
 
-      - name: Copy rules
+      - name: Prepare package
         run: |
+          rm -rf dist
+          mkdir -p dist/package
+
+          cp snishaper dist/package/snishaper
+
           if [ -d rules ]; then
             cp -r rules dist/package/rules
           fi
 
-      - name: Copy docs
-        run: |
           if [ -f README.md ]; then
             cp README.md dist/package/README.md
           fi
