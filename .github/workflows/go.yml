@@ -1,4 +1,3 @@
-
 name: Build SniShaper Linux
 
 on:
@@ -16,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Go
+      - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: "1.25"
@@ -29,8 +28,31 @@ jobs:
       - name: Show Go version
         run: go version
 
-      - name: Download dependencies
+      - name: Download Go dependencies
         run: go mod download
+
+      - name: Prepare embedded web files
+        run: |
+          mkdir -p web/dist
+          if [ ! -f web/dist/index.html ]; then
+            cat > web/dist/index.html <<'EOF'
+          <!doctype html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>SniShaper CLI</title>
+            </head>
+            <body>
+              <h1>SniShaper CLI</h1>
+            </body>
+          </html>
+          EOF
+          fi
+
+      - name: Prepare package directory
+        run: |
+          rm -rf dist
+          mkdir -p dist/package
 
       - name: Build binary
         env:
@@ -38,7 +60,6 @@ jobs:
           GOOS: linux
           GOARCH: amd64
         run: |
-          mkdir -p dist/package
           go build -trimpath -ldflags="-s -w" -o dist/package/snishaper .
           chmod +x dist/package/snishaper
 
@@ -51,18 +72,19 @@ jobs:
       - name: Copy docs
         run: |
           if [ -f README.md ]; then
-            cp README.md dist/package/
+            cp README.md dist/package/README.md
           fi
 
           if [ -f LICENSE ]; then
-            cp LICENSE dist/package/
+            cp LICENSE dist/package/LICENSE
           fi
 
       - name: Test binary
         run: |
           ./dist/package/snishaper --help || true
+          ./dist/package/snishaper --version || true
 
-      - name: Package
+      - name: Create archive
         run: |
           cd dist/package
           tar -czf ../snishaper-linux-amd64.tar.gz .
