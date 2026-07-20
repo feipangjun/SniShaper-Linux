@@ -1,0 +1,78 @@
+
+name: Build SniShaper Linux
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Linux amd64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Show Go version
+        run: go version
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p dist/package
+          go build -trimpath -ldflags="-s -w" -o dist/package/snishaper main.go
+          chmod +x dist/package/snishaper
+
+      - name: Copy rules
+        run: |
+          if [ -d rules ]; then
+            cp -r rules dist/package/rules
+          fi
+
+      - name: Copy docs
+        run: |
+          if [ -f README.md ]; then
+            cp README.md dist/package/
+          fi
+
+          if [ -f LICENSE ]; then
+            cp LICENSE dist/package/
+          fi
+
+      - name: Test binary
+        run: |
+          ./dist/package/snishaper --help || true
+
+      - name: Package
+        run: |
+          cd dist/package
+          tar -czf ../snishaper-linux-amd64.tar.gz .
+          cd ../..
+          sha256sum dist/snishaper-linux-amd64.tar.gz > dist/snishaper-linux-amd64.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: snishaper-linux-amd64
+          path: |
+            dist/snishaper-linux-amd64.tar.gz
+            dist/snishaper-linux-amd64.tar.gz.sha256
